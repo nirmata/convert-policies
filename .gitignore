@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Optional: uncomment to avoid committing generated output and results
+# output/*.yaml
+# output/**/*.yaml
+# results/*.json
