@@ -10,6 +10,9 @@ Usage:
   # Validate conversion (input + output); input is validated first:
   python3 validate.py --input input/require-resource-limits.yaml --output output/converted.yaml --tool nctl
 
+  # Kyverno CLI semantic test runs by default; skip it with:
+  python3 validate.py --input input/require-resource-limits.yaml --output output/converted.yaml --tool nctl --skip-kyverno-test
+
 Results are written to results/run_<timestamp>_<tool>.json when --output is given.
 """
 
@@ -83,6 +86,26 @@ def validate_schema(output_path: Path, use_kubectl: bool = True) -> tuple[bool, 
     return (len(errors) == 0, errors)
 
 
+def run_kyverno_test(test_dir: Path, timeout_sec: int = 60) -> tuple[bool, list[str], bool]:
+    """Run 'kyverno test <test_dir>'. Returns (passed, errors, skipped). skipped=True if kyverno not on PATH."""
+    if not shutil.which("kyverno"):
+        return False, [], True
+    test_dir = test_dir.resolve()
+    if not test_dir.is_dir():
+        return False, [f"Kyverno test dir not found: {test_dir}"], False
+    proc = subprocess.run(
+        ["kyverno", "test", str(test_dir)],
+        cwd=str(test_dir),
+        capture_output=True,
+        text=True,
+        timeout=timeout_sec,
+    )
+    if proc.returncode == 0:
+        return True, [], False
+    err = (proc.stderr or proc.stdout or "").strip()
+    return False, [err[:500] if err else "kyverno test exited non-zero"], False
+
+
 def _kinds_from_cluster_policy(doc: dict) -> set[str]:
     kinds = set()
     for rule in (doc.get("spec") or {}).get("rules") or []:
@@ -135,6 +158,8 @@ def main() -> int:
     parser.add_argument("--output", help="Path to converted policy (output). Omit to validate input only (run before converting).")
     parser.add_argument("--tool", default="unknown", help="Tool label for results (e.g. nctl, cursor, claude)")
     parser.add_argument("--no-kubectl", action="store_true", help="Skip kubectl dry-run")
+    parser.add_argument("--skip-kyverno-test", action="store_true", help="Skip Kyverno CLI semantic test (by default it runs when kyverno-tests/ exists and kyverno is on PATH)")
+    parser.add_argument("--kyverno-test-dir", metavar="DIR", default="kyverno-tests", help="Directory for 'kyverno test' (default: kyverno-tests). Ignored if --skip-kyverno-test is set.")
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -213,6 +238,12 @@ def main() -> int:
     tool_safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in args.tool)
     out_json = results_dir / f"run_{timestamp}_{tool_safe}.json"
 
+    semantic_pass: bool | None = None
+    semantic_errors: list[str] = []
+    semantic_skipped = True
+    if not getattr(args, "skip_kyverno_test", False):
+        test_dir = Path(__file__).resolve().parent / getattr(args, "kyverno_test_dir", "kyverno-tests")
+        semantic_pass, semantic_errors, semantic_skipped = run_kyverno_test(test_dir)
     report = {
         "input_path": str(input_path),
         "output_path": str(output_path),
@@ -222,20 +253,31 @@ def main() -> int:
         "intent_pass": intent_pass,
         "schema_errors": schema_errors,
         "intent_errors": intent_errors,
+        "semantic_pass": semantic_pass if not semantic_skipped else None,
+        "semantic_errors": semantic_errors,
+        "semantic_skipped": semantic_skipped,
     }
     out_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
-    print(f"Schema:  {'PASS' if schema_pass else 'FAIL'}")
-    print(f"Intent:  {'PASS' if intent_pass else 'FAIL'}")
+    print(f"Schema:   {'PASS' if schema_pass else 'FAIL'}")
+    print(f"Intent:   {'PASS' if intent_pass else 'FAIL'}")
+    if semantic_skipped:
+        print("Semantic: SKIP (no --kyverno-test-dir or kyverno CLI not on PATH)")
+    else:
+        print(f"Semantic: {'PASS' if semantic_pass else 'FAIL'}")
     if schema_errors:
         for e in schema_errors:
             print(f"  Schema: {e}")
     if intent_errors:
         for e in intent_errors:
             print(f"  Intent: {e}")
+    if semantic_errors:
+        for e in semantic_errors:
+            print(f"  Semantic: {e}")
     print(f"Results: {out_json}")
 
-    return 0 if (schema_pass and intent_pass) else 1
+    all_pass = schema_pass and intent_pass and (semantic_skipped or semantic_pass)
+    return 0 if all_pass else 1
 
 
 if __name__ == "__main__":

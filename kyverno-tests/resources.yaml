@@ -1,0 +1,29 @@
+# Pod that should PASS (has CPU and memory limits)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-limits
+  namespace: default
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      resources:
+        limits:
+          cpu: "100m"
+          memory: "128Mi"
+---
+# Pod that should FAIL (missing memory limit)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-without-limits
+  namespace: default
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      resources:
+        limits:
+          cpu: "100m"
+        # memory limit missing - should fail

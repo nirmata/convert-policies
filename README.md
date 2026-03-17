@@ -2,6 +2,24 @@
 
 A **public benchmark** for converting old Kyverno policies to Kyverno 1.16+ (e.g. ValidatingPolicy). Use the same input and the same validation to compare **NPA (nctl)**, **Cursor Agent**, **Claude Code**, or any other AI/tool.
 
+## Table of contents
+
+- [Prerequisites](#prerequisites)
+- [Folder layout](#folder-layout)
+- [Step-by-step flow](#step-by-step-flow)
+  - [1. Clone the repo](#1-clone-the-repo)
+  - [2. Input: choose a policy to convert](#2-input-choose-a-policy-to-convert)
+  - [3. If you use your own policy, make sure it is valid first](#3-if-you-use-your-own-policy-make-sure-it-is-valid-first-optional-before-converting)
+  - [4. Conversion prompt](#4-conversion-prompt-use-this-exact-task-for-fair-comparison)
+  - [5. Run conversion with nctl (NPA)](#5-run-conversion-with-nctl-npa)
+  - [6. Run validation](#6-run-validation)
+  - [7. Kyverno CLI test (semantic validation)](#7-kyverno-cli-test-semantic-validation--runs-by-default)
+  - [8. Compare with another AI](#8-compare-with-another-ai-cursor-claude-etc)
+- [How we validate your policy (no cluster required)](#how-we-validate-your-policy-no-cluster-required)
+- [What the validator checks](#what-the-validator-checks)
+- [Results format](#results-format)
+- [License](#license)
+
 ---
 
 ## Prerequisites
@@ -15,7 +33,7 @@ Install the following and ensure they are on your PATH (unless noted):
 | **PyYAML** | `pip install pyyaml` (required by the validator) |
 | **nctl** | Run conversions with NPA; run **nctl login** first (optional if you only compare other AIs) |
 | **kubectl** | Used by validator for schema dry-run (optional if no cluster) |
-| **kyverno CLI** | Optional: only if you add semantic validation (e.g. `kyverno test`) |
+| **kyverno CLI** | Used by default for semantic validation (step 7). Runs **locally**—no Kubernetes cluster or Kind needed. Use **--skip-kyverno-test** to skip. |
 
 No other dependencies: the validator uses only the Python standard library and PyYAML (`pip install pyyaml` if needed).
 
@@ -32,7 +50,8 @@ convert-policies/
 ├── output/               # Put the converted policy here (from nctl or any AI)
 ├── results/              # Validation results (JSON) go here
 ├── sample-policies/      # Example legacy policies (ClusterPolicy YAMLs)
-└── test-resources/       # Test resources (e.g. Pods) for running policies
+├── test-resources/       # Test resources (e.g. Pods) for running policies
+└── kyverno-tests/       # Kyverno CLI test (cli.kyverno.io Test + resources); runs by default unless --skip-kyverno-test
 ```
 
 ---
@@ -106,9 +125,27 @@ If you converted your own policy, set `--input` to that file (e.g. `--input inpu
 - **`--output`** — Path to the **converted** policy (the file to validate).
 - **`--tool`** — Label for this run (e.g. `nctl`, `cursor`, `claude`). Used in the results JSON filename.
 
-Results are written to `results/run_<timestamp>_<tool>.json`.
+Results are written to `results/run_<timestamp>_<tool>.json`. **Semantic validation** (Kyverno CLI test) runs by default when `kyverno-tests/` exists and `kyverno` is on PATH; use **--skip-kyverno-test** to skip it (see step 7).
 
-### 7. Compare with another AI (Cursor, Claude, etc.)
+### 7. Kyverno CLI test (semantic validation) — runs by default
+
+**No cluster needed.** When you run step 6, the validator also runs the **Kyverno CLI test** by default (if the `kyverno` CLI is on your PATH and the `kyverno-tests/` directory exists). The CLI runs **locally** against YAML files; you do **not** need a Kind cluster or Kyverno installed in a cluster. Install the [Kyverno CLI](https://kyverno.io/docs/kyverno-cli/) and ensure it is on your PATH.
+
+To **skip** semantic validation (e.g. if you don't have the Kyverno CLI or use a custom test dir elsewhere), pass **--skip-kyverno-test**:
+
+```bash
+python3 validate.py --input input/require-resource-limits.yaml --output output/converted.yaml --tool nctl --skip-kyverno-test
+```
+
+You can also run the test manually:
+
+```bash
+kyverno test kyverno-tests/
+```
+
+The repo includes a minimal `kyverno-tests/` for the sample policy: it expects the converted policy in `output/converted.yaml` with `metadata.name: require-resource-limits`. If your converter uses a different policy name, edit `kyverno-tests/kyverno-test.yaml` to match. When the test runs, it checks that the converted policy **passes** on compliant resources and **fails** on non-compliant ones—so you can tell if the conversion is accurate, not just valid YAML. To use a different test directory, pass **--kyverno-test-dir &lt;dir&gt;** (default is `kyverno-tests`).
+
+### 8. Compare with another AI (Cursor, Claude, etc.)
 
 **Fair comparison.** When you benchmark an AI other than nctl (e.g. ChatGPT, Cursor, Claude, or another agent), the conversion must be done **only** by that AI. If Nirmata MCP servers or Nirmata skills are enabled in your environment (e.g. in Cursor or another IDE), they can take part in the conversion and the result will no longer reflect that agent alone. Before running the other AI, disable or remove any Nirmata MCP servers and Nirmata-related skills so the benchmark measures only the agent you are testing.
 
@@ -133,7 +170,7 @@ User policies are validated by **Python scripts only** (PyYAML + structure check
 
 - **What runs:** `validate-legacy.py` or `validate.py --input <path>` checks that the file is valid YAML, has `kind: ClusterPolicy`, `apiVersion: kyverno.io/...`, and that each rule has `match` and a valid `validate` block (pattern/anyPattern/deny + message).
 - **Optional:** If `kubectl` is on your PATH, the script may run `kubectl apply -f <policy> --dry-run=client`. That only succeeds when a cluster with Kyverno CRDs is available; if not (e.g. no cluster or CRDs not installed), the script ignores that failure and still reports PASS from the structure checks.
-- **Kyverno CLI:** Not used for this validation. You can use it separately (e.g. `kyverno apply policy.yaml --resource test-resources/test-pod.yaml`) for extra semantic checks; it is optional and not required for the benchmark.
+- **Kyverno CLI:** Semantic validation runs **by default** when you run `validate.py` with `--output`: the script runs `kyverno test kyverno-tests/` (or the dir given by `--kyverno-test-dir`). The CLI runs **locally** (no cluster needed). If the Kyverno CLI is not on PATH or the test dir is missing, semantic validation is skipped. Use **--skip-kyverno-test** to skip it explicitly.
 
 ---
 
@@ -142,6 +179,7 @@ User policies are validated by **Python scripts only** (PyYAML + structure check
 - **Input policy (before conversion):** When you run `validate.py` with both `--input` and `--output`, the input file is validated first (legacy ClusterPolicy structure: YAML, kind, apiVersion, spec.rules, match, validate). If the input is invalid, the script exits with an error so you fix the policy before comparing conversion output. You can also validate input only with `python3 validate.py --input input/your-policy.yaml` (no `--output`).
 - **Schema (output):** The converted file is valid YAML, has `kind: ValidatingPolicy` (or another Kyverno 1.16+ policy kind), and `apiVersion` starting with `policies.kyverno.io/`. Optionally runs `kubectl apply --dry-run=client` if kubectl is available.
 - **Intent:** For ClusterPolicy → ValidatingPolicy: same target kinds (e.g. Pods) and same validation action (Enforce → Deny, Audit → Audit).
+- **Semantic (default on):** Unless you pass **--skip-kyverno-test**, the script runs `kyverno test <dir>` (default dir: `kyverno-tests/`) when the Kyverno CLI is on PATH to check that the converted policy passes/fails on the test resources as expected. No cluster required.
 
 ---
 
@@ -158,9 +196,14 @@ Each run produces a JSON file in `results/`, e.g. `results/run_20250115_143022_n
   "schema_pass": true,
   "intent_pass": true,
   "schema_errors": [],
-  "intent_errors": []
+  "intent_errors": [],
+  "semantic_pass": true,
+  "semantic_errors": [],
+  "semantic_skipped": false
 }
 ```
+
+When Kyverno test is skipped (**--skip-kyverno-test**, or `kyverno` not on PATH, or test dir missing), `semantic_skipped` is `true` and `semantic_pass`/`semantic_errors` may be omitted.
 
 Use these files to compare accuracy across tools (and add timing/cost later if you collect them).
 
