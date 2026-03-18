@@ -1,6 +1,6 @@
 # Kyverno CLI test for the converted policy (output/converted.yaml).
-# The results.policy name must match the converted policy's metadata.name.
-# nctl conversion uses name "require-cpu-memory-limits"; adjust if you use a different converter.
+# When you run validate.py, it auto-patches results.policy to match the converted policy's metadata.name
+# (so it works whether nctl produces require-pod-resource-limits, require-cpu-memory-limits, etc.).
 # See: https://kyverno.io/docs/kyverno-cli/usage/test/
 apiVersion: cli.kyverno.io/v1alpha1
 kind: Test

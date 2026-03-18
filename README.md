@@ -48,11 +48,11 @@ convert-policies/
 ├── validate-legacy.py    # Legacy policy validation (used by validate.py; can also run standalone)
 ├── input/                # Policies to convert (add yours or use the sample)
 ├── output/               # Put the converted policy here (from nctl or any AI)
-├── results/              # Validation results (JSON) go here
+├── results/              # Validation results (JSON); policy copies in results/policy-output-manifest-files/
 ├── sample-policies/      # Example legacy policies (ClusterPolicy YAMLs)
 ├── test-resources/       # Test resources (e.g. Pods) for running policies
 ├── kyverno-tests/        # Kyverno CLI test (cli.kyverno.io Test + resources); runs by default unless --skip-kyverno-test
-└── run-nctl-conversion.sh # Run nctl AI conversion with full logging (nctl version + output) to verify skill loading
+└── run-nctl-conversion.sh # Run nctl AI conversion (version + flow checks; saves policy copy to results/policy-output-manifest-files/)
 ```
 
 ---
@@ -104,7 +104,7 @@ Replace `input/my-policy.yaml` with your actual input path. The **output** shoul
 
 Use this step when you want to **test** the nctl AI conversion feature. It converts your policy using nctl’s AI mechanism.
 
-**To log the nctl version and capture all nctl AI output** (so you can verify the conversion skill was loaded), use the helper script:
+Use the helper script to run the conversion and see **conversion step results** (whether the conversion skill was loaded and the agent completed):
 
 ```bash
 ./run-nctl-conversion.sh
@@ -112,9 +112,9 @@ Use this step when you want to **test** the nctl AI conversion feature. It conve
 ./run-nctl-conversion.sh input/my-policy.yaml
 ```
 
-The script writes **nctl version** and the **full nctl ai console output** to `results/nctl_conversion_<timestamp>.log`. Check that log for lines like `Reading file from .../converting-policies/SKILL.md` or `policy-skills` to confirm the conversion skill was loaded and used. The script uses **`--skip-permission-checks`** so nctl does not prompt for confirmation (e.g. "Does this capture the policy intent?") and the conversion can run non-interactively (e.g. in CI or when there is no TTY).
+The script prints **nctl version**, runs **nctl ai**, then reports three checks: (1) converting-policies skill loaded, (2) generating-policies skill loaded, (3) agent completed successfully. Conversion logs are **not** saved to disk. A copy of the converted policy is saved to **`results/policy-output-manifest-files/<policy-name>_<timestamp>.yaml`** (e.g. `require-resource-limits_20260317_134657.yaml`) for that run. The script uses **`--skip-permission-checks`** so nctl does not prompt for confirmation and the conversion runs non-interactively (e.g. in CI or when there is no TTY).
 
-To run the conversion without the script (no log file). Add **`--skip-permission-checks`** if you need non-interactive runs:
+To run the conversion without the script, add **`--skip-permission-checks`** for non-interactive runs:
 
 ```bash
 nctl ai --allowed-dirs "$(pwd)" --prompt "Convert the policy in input/require-resource-limits.yaml to a Kyverno ValidatingPolicy (Kyverno 1.16+) using CEL-based validation where appropriate. Write the converted policy to output/converted.yaml." --skip-permission-checks
@@ -138,7 +138,7 @@ If you converted your own policy, set `--input` to that file (e.g. `--input inpu
 - **`--output`** — Path to the **converted** policy (the file to validate).
 - **`--tool`** — Label for this run (e.g. `nctl`, `cursor`, `claude`). Used in the results JSON filename.
 
-Results are written to `results/run_<timestamp>_<tool>.json`. **Semantic validation** (Kyverno CLI test) runs by default when `kyverno-tests/` exists and `kyverno` is on PATH; use **--skip-kyverno-test** to skip it (see step 7).
+Results are written to `results/run_<timestamp>_<tool>.json`. The validator prints a short summary (Schema, Intent, Semantic) with pass/fail for each; on semantic failure it shows the full Kyverno test output (table and reason). **Semantic validation** (Kyverno CLI test) runs by default when `kyverno-tests/` exists and `kyverno` is on PATH; use **--skip-kyverno-test** to skip it (see step 7).
 
 ### 7. Kyverno CLI test (semantic validation) — runs by default
 
@@ -156,7 +156,7 @@ You can also run the test manually:
 kyverno test kyverno-tests/
 ```
 
-The repo includes a minimal `kyverno-tests/` for the sample policy: it expects the converted policy in `output/converted.yaml`. The test's `results.policy` must match the policy's `metadata.name` (e.g. `require-cpu-memory-limits` for nctl output). If your converter uses a different policy name, edit `kyverno-tests/kyverno-test.yaml` to match. When the test runs, it checks that the converted policy **passes** on compliant resources and **fails** on non-compliant ones—so you can tell if the conversion is accurate, not just valid YAML. To use a different test directory, pass **--kyverno-test-dir &lt;dir&gt;** (default is `kyverno-tests`).
+The repo includes a minimal `kyverno-tests/` for the sample policy: it expects the converted policy in `output/converted.yaml`. When you run **validate.py**, it **automatically** patches the test so `results.policy` matches the converted policy's **metadata.name**—so it works whether nctl (or another converter) produces `require-pod-resource-limits`, `require-cpu-memory-limits`, or any other name. You do **not** need to edit `kyverno-test.yaml` when the converter uses a different policy name. The test checks that the converted policy **passes** on compliant resources and **fails** on non-compliant ones. To use a different test directory, pass **--kyverno-test-dir &lt;dir&gt;** (default is `kyverno-tests`).
 
 **Note:** As of Kyverno CLI 1.17, the `kyverno test` command does not yet support the ValidatingPolicy 1.16+ schema (e.g. `spec.admission`, `spec.assertions`). If you see **Semantic: SKIP** with that message, the validator is treating it as a known limitation—schema and intent still validate your conversion. Use **--skip-kyverno-test** to skip the step explicitly.
 

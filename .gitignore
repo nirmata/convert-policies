@@ -15,3 +15,4 @@ output/*.yaml
 output/**/*.yaml
 results/*.json
 results/*.log
+results/policy-output-manifest-files/

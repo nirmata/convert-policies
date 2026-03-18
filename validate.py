@@ -18,11 +18,18 @@ Results are written to results/run_<timestamp>_<tool>.json when --output is give
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences for cleaner log/output."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 try:
     import yaml
@@ -86,27 +93,71 @@ def validate_schema(output_path: Path, use_kubectl: bool = True) -> tuple[bool, 
     return (len(errors) == 0, errors)
 
 
-def run_kyverno_test(test_dir: Path, timeout_sec: int = 60) -> tuple[bool, list[str], bool]:
-    """Run 'kyverno test <test_dir>'. Returns (passed, errors, skipped). skipped=True if kyverno not on PATH or CLI doesn't support policy format."""
+def run_kyverno_test(
+    test_dir: Path,
+    output_policy_name: str | None = None,
+    timeout_sec: int = 60,
+) -> tuple[bool, list[str], bool]:
+    """Run 'kyverno test <test_dir>'. Returns (passed, errors, skipped).
+    If output_policy_name is set, patches the test file so results.policy matches the converted policy's metadata.name (avoids 'Not found' when converter uses a different name)."""
     if not shutil.which("kyverno"):
         return False, [], True
     test_dir = test_dir.resolve()
     if not test_dir.is_dir():
         return False, [f"Kyverno test dir not found: {test_dir}"], False
-    proc = subprocess.run(
-        ["kyverno", "test", str(test_dir)],
-        cwd=str(test_dir),
-        capture_output=True,
-        text=True,
-        timeout=timeout_sec,
-    )
-    if proc.returncode == 0:
-        return True, [], False
-    err = (proc.stderr or proc.stdout or "").strip()
-    # If CLI rejects the policy with "unknown field" / "Invalid value", the test command doesn't support this ValidatingPolicy schema yet (even on CLI 1.17) → treat as skip, not fail
-    if err and ("unknown field" in err or "Invalid value" in err) and "failed to load" in err.lower():
-        return False, ["Kyverno CLI 'test' command does not yet support ValidatingPolicy 1.16+ schema (e.g. spec.admission, spec.assertions). Use --skip-kyverno-test for now."], True
-    return False, [err[:500] if err else "kyverno test exited non-zero"], False
+
+    run_dir = test_dir
+    cleanup_dir: Path | None = None
+    if output_policy_name and yaml:
+        # Patch test so results.policy matches the actual converted policy name (nctl may produce require-pod-resource-limits, require-cpu-memory-limits, etc.)
+        repo_root = test_dir.parent
+        try:
+            cleanup_dir = Path(tempfile.mkdtemp(prefix="kyverno_test_", dir=str(repo_root)))
+            resources_src = test_dir / "resources.yaml"
+            if resources_src.exists():
+                shutil.copy(resources_src, cleanup_dir / "resources.yaml")
+            test_file = test_dir / "kyverno-test.yaml"
+            if not test_file.exists():
+                for f in test_dir.iterdir():
+                    if f.suffix in (".yaml", ".yml") and f.name != "resources.yaml":
+                        test_file = f
+                        break
+            if test_file.exists():
+                doc = yaml.safe_load(test_file.read_text(encoding="utf-8"))
+                if isinstance(doc, dict) and "results" in doc:
+                    for r in doc["results"]:
+                        if isinstance(r, dict) and "policy" in r:
+                            r["policy"] = output_policy_name
+                (cleanup_dir / test_file.name).write_text(yaml.dump(doc, default_flow_style=False, sort_keys=False), encoding="utf-8")
+                run_dir = cleanup_dir
+        except Exception:
+            if cleanup_dir and cleanup_dir.exists():
+                shutil.rmtree(cleanup_dir, ignore_errors=True)
+            cleanup_dir = None
+
+    try:
+        proc = subprocess.run(
+            ["kyverno", "test", str(run_dir)],
+            cwd=str(run_dir),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        if proc.returncode == 0:
+            return True, [], False
+        # Full output: stdout often has the table, stderr the summary (or both combined)
+        raw = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        out = _strip_ansi(raw)
+        # If CLI rejects the policy with "unknown field" / "Invalid value", treat as skip
+        if out and ("unknown field" in out or "Invalid value" in out) and "failed to load" in out.lower():
+            return False, ["Kyverno CLI 'test' command does not yet support ValidatingPolicy 1.16+ schema (e.g. spec.admission, spec.assertions). Use --skip-kyverno-test for now."], True
+        # Return full kyverno test output so user sees which tests failed and why (table + summary)
+        if not out:
+            out = "kyverno test exited non-zero (no output)"
+        return False, [out], False
+    finally:
+        if cleanup_dir and cleanup_dir.exists():
+            shutil.rmtree(cleanup_dir, ignore_errors=True)
 
 
 def _kinds_from_cluster_policy(doc: dict) -> set[str]:
@@ -246,7 +297,8 @@ def main() -> int:
     semantic_skipped = True
     if not getattr(args, "skip_kyverno_test", False):
         test_dir = Path(__file__).resolve().parent / getattr(args, "kyverno_test_dir", "kyverno-tests")
-        semantic_pass, semantic_errors, semantic_skipped = run_kyverno_test(test_dir)
+        output_policy_name = (output_doc.get("metadata") or {}).get("name") or None
+        semantic_pass, semantic_errors, semantic_skipped = run_kyverno_test(test_dir, output_policy_name=output_policy_name)
     report = {
         "input_path": str(input_path),
         "output_path": str(output_path),
@@ -262,22 +314,40 @@ def main() -> int:
     }
     out_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
-    print(f"Schema:   {'PASS' if schema_pass else 'FAIL'}")
-    print(f"Intent:   {'PASS' if intent_pass else 'FAIL'}")
-    if semantic_skipped:
-        print("Semantic: SKIP" + (f" ({semantic_errors[0]})" if semantic_errors else " (no test dir or kyverno CLI not on PATH)"))
-    else:
-        print(f"Semantic: {'PASS' if semantic_pass else 'FAIL'}")
+    # Pretty validation result summary
+    print()
+    print("  📋 Validation results")
+    print("  " + "─" * 40)
+    schema_emoji = "✅" if schema_pass else "❌"
+    schema_status = "PASS" if schema_pass else "FAIL"
+    print(f"  1. Schema   {schema_emoji}  {schema_status}  — output is valid ValidatingPolicy YAML")
     if schema_errors:
         for e in schema_errors:
-            print(f"  Schema: {e}")
+            print(f"      └─ {e}")
+
+    intent_emoji = "✅" if intent_pass else "❌"
+    intent_status = "PASS" if intent_pass else "FAIL"
+    print(f"  2. Intent   {intent_emoji}  {intent_status}  — converted policy matches source intent")
     if intent_errors:
         for e in intent_errors:
-            print(f"  Intent: {e}")
-    if semantic_errors and not semantic_skipped:
-        for e in semantic_errors:
-            print(f"  Semantic: {e}")
-    print(f"Results: {out_json}")
+            print(f"      └─ {e}")
+
+    if semantic_skipped:
+        print(f"  3. Semantic ⏭️   SKIP   — {semantic_errors[0] if semantic_errors else 'no test dir or kyverno CLI not on PATH'}")
+    else:
+        semantic_emoji = "✅" if semantic_pass else "❌"
+        semantic_status = "PASS" if semantic_pass else "FAIL"
+        print(f"  3. Semantic {semantic_emoji}  {semantic_status}  — Kyverno CLI test (policy behavior)")
+        if semantic_errors:
+            for e in semantic_errors:
+                lines = e.splitlines()
+                for i, line in enumerate(lines):
+                    prefix = "      └─ " if i == 0 else "         "
+                    print(f"{prefix}{line}")
+
+    print("  " + "─" * 40)
+    print(f"  📁 Results: {out_json}")
+    print()
 
     all_pass = schema_pass and intent_pass and (semantic_skipped or semantic_pass)
     return 0 if all_pass else 1
