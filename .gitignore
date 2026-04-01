@@ -31,5 +31,4 @@ blind-eval/revealed_scores.json
 dataset/.cache/
 dataset/imported/**
 !dataset/imported/README.md
-!dataset/imported/.gitkeep
 !dataset/imported/upstream-meta.json
