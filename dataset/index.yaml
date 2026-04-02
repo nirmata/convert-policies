@@ -158,6 +158,22 @@ policies:
     path: imported/kyverno-policies/cp_block_stale_images.yaml
     kyverno_test_dir: imported/kyverno-tests/cp_block_stale_images
 
+  - id: cp_check_nvidia_gpu
+    track: cluster-policy
+    task_type: convert
+    difficulty: hard
+    expected_output_kind: ValidatingPolicy
+    path: imported/kyverno-policies/cp_check_nvidia_gpu.yaml
+    kyverno_test_dir: imported/kyverno-tests/cp_check_nvidia_gpu
+
+  - id: cp_limit_configmap_for_sa
+    track: cluster-policy
+    task_type: convert
+    difficulty: hard
+    expected_output_kind: ValidatingPolicy
+    path: imported/kyverno-policies/cp_limit_configmap_for_sa.yaml
+    kyverno_test_dir: imported/kyverno-tests/cp_limit_configmap_for_sa
+
   # =====================================================================
   # MutatingPolicy (8 tasks)
   # =====================================================================

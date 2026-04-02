@@ -93,6 +93,14 @@ policies:
     upstream_path: other/block-stale-images/block-stale-images.yaml
     sync_test: true
 
+  - id: cp_check_nvidia_gpu
+    upstream_path: other/check-nvidia-gpu/check-nvidia-gpu.yaml
+    sync_test: true
+
+  - id: cp_limit_configmap_for_sa
+    upstream_path: other/limit-configmap-for-sa/limit-configmap-for-sa.yaml
+    sync_test: true
+
   # =====================================================================
   # MutatingPolicy (cpol → mpol) — 8 tasks
   # =====================================================================
