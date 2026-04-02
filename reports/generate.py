@@ -61,13 +61,8 @@ def _load_results(include_files: list[str] | None = None) -> list[dict]:
     return results
 
 
-def _average_runs(results: list[dict]) -> list[dict]:
-    """Collapse multiple runs of the same (tool, policy_id) into averaged entries.
-
-    Boolean fields (schema_pass, intent_pass, etc.) use majority vote.
-    Numeric fields (time, cost, diff_score, tokens) are averaged.
-    If there's only one run per key, the result passes through unchanged.
-    """
+def _deduplicate_runs(results: list[dict]) -> list[dict]:
+    """If multiple runs exist for the same (tool, policy_id), keep the latest only."""
     from collections import defaultdict
 
     groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
@@ -75,42 +70,7 @@ def _average_runs(results: list[dict]) -> list[dict]:
         key = (r.get("tool", ""), r.get("policy_id", ""))
         groups[key].append(r)
 
-    averaged: list[dict] = []
-    for (_tool, _pid), runs in groups.items():
-        if len(runs) == 1:
-            averaged.append(runs[0])
-            continue
-
-        # Start from the latest run as the base
-        base = dict(runs[-1])
-        n = len(runs)
-        base["runs_averaged"] = n
-
-        # Majority vote for booleans
-        for field in ("success", "schema_pass", "semantic_pass"):
-            vals = [r.get(field) for r in runs if r.get(field) is not None]
-            if vals:
-                base[field] = sum(1 for v in vals if v) > len(vals) / 2
-            else:
-                base[field] = None
-
-        # Average numerics
-        for field in ("conversion_time_seconds", "cost_usd",
-                       "input_tokens", "output_tokens", "total_tokens"):
-            vals = [r[field] for r in runs if r.get(field) is not None]
-            if vals:
-                base[field] = round(sum(vals) / len(vals), 4)
-            else:
-                base[field] = None
-
-        # Pass rate across runs (extra field for the dashboard)
-        base["pass_rate_across_runs"] = round(
-            sum(1 for r in runs if r.get("success")) / n, 4
-        )
-
-        averaged.append(base)
-
-    return averaged
+    return [runs[-1] for runs in groups.values()]
 
 
 def _aggregate(results: list[dict]) -> dict:
@@ -301,7 +261,7 @@ def generate_all(config: dict | None = None, include_files: list[str] | None = N
         return
 
     # Average multiple runs of the same (tool, policy) before aggregating
-    results = _average_runs(results)
+    results = _deduplicate_runs(results)
     agg = _aggregate(results)
     leaderboard = _compute_leaderboard(agg["tool_stats"], config)
 
@@ -348,7 +308,7 @@ def main() -> int:
         return 1
 
     # Average multiple runs of the same (tool, policy) before aggregating
-    results = _average_runs(results)
+    results = _deduplicate_runs(results)
     agg = _aggregate(results)
     leaderboard = _compute_leaderboard(agg["tool_stats"], config)
 

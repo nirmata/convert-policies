@@ -118,8 +118,6 @@ def _run_single(
     eval_config: dict | None = None,
     tool_script: str | None = None,
     containerized: bool = False,
-    run_number: int = 1,
-    total_runs: int = 1,
 ) -> dict:
     """Run one (tool, policy) pair and return the results dict."""
     eval_config = eval_config or {}
@@ -175,10 +173,7 @@ def _run_single(
             }
 
     output_dir = REPO_ROOT / "output" / tool_name
-    if total_runs > 1:
-        output_path = output_dir / f"{policy_id}_run{run_number}.yaml"
-    else:
-        output_path = output_dir / f"{policy_id}.yaml"
+    output_path = output_dir / f"{policy_id}.yaml"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     timeout = eval_config.get("timeout_seconds", 120)
@@ -246,7 +241,7 @@ def _run_single(
 
         timestamp_str = datetime.now(timezone.utc).isoformat()
         last_result = {
-            "run_id": f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{tool_name}_{policy_id}_r{run_number}",
+            "run_id": f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{tool_name}_{policy_id}",
             "tool": tool_name,
             "policy_id": policy_id,
             "track": track,
@@ -340,7 +335,6 @@ def main() -> int:
     parser.add_argument("--task-type", choices=["convert", "generate"], help="Filter by task type")
     parser.add_argument("--output-kind", help="Filter by expected output kind (e.g. MutatingPolicy)")
     parser.add_argument("--max-attempts", type=int, default=1, help="Max attempts per policy (iterative improvement)")
-    parser.add_argument("--runs", type=int, default=1, help="Number of runs per (tool, policy) pair for averaging")
     parser.add_argument("--workers", type=int, default=1, help="Parallel workers per tool (default: 1 = sequential)")
     parser.add_argument("--tool-script", help="Path to tool runner script (overrides auto-detection from --tool)")
     parser.add_argument("--skip-kyverno-test", action="store_true")
@@ -393,24 +387,16 @@ def main() -> int:
 
     all_results: list[dict] = []
 
-    num_runs = args.runs
     num_workers = args.workers
 
     def _run_tool(tool_name: str) -> tuple[list[dict], list[str]]:
         """Run all jobs for a single tool. Returns (results, log_lines)."""
         tcfg = tool_configs.get(tool_name, {})
-        runs_label = f" (x{num_runs})" if num_runs > 1 else ""
         workers_label = f", {num_workers} workers" if num_workers > 1 else ""
-        lines: list[str] = [f"\n--- Running {tool_name}{runs_label}{workers_label} ---"]
+        lines: list[str] = [f"\n--- Running {tool_name}{workers_label} ---"]
 
-        jobs: list[tuple[dict, int]] = []
-        for policy in policies:
-            for run_num in range(1, num_runs + 1):
-                jobs.append((policy, run_num))
-
-        def _execute_job(job: tuple[dict, int]) -> dict:
-            policy, run_num = job
-            result = _run_single(
+        def _execute_job(policy: dict) -> dict:
+            return _run_single(
                 tool_name,
                 tcfg,
                 policy,
@@ -418,47 +404,40 @@ def main() -> int:
                 eval_config=eval_config,
                 tool_script=args.tool_script,
                 containerized=args.containerized,
-                run_number=run_num,
-                total_runs=num_runs,
             )
-            result["run_number"] = run_num
-            result["total_runs"] = num_runs
-            return result
 
         tool_results: list[dict] = []
 
         if num_workers <= 1:
-            for policy, run_num in jobs:
+            for policy in policies:
                 task_type = policy.get("task_type", "convert")
                 label = f"{policy['id']} ({task_type}/{policy['track']})"
-                run_tag = f" run {run_num}/{num_runs}" if num_runs > 1 else ""
 
-                result = _execute_job((policy, run_num))
+                result = _execute_job(policy)
                 tool_results.append(result)
 
                 status = "PASS" if result.get("success") else "FAIL"
-                lines.append(f"  [{tool_name}] {label}{run_tag} ... {status}")
+                lines.append(f"  [{tool_name}] {label} ... {status}")
 
                 run_id = result.get("run_id", f"run_{tool_name}_{policy['id']}")
                 out_json = results_dir / f"{run_id}.json"
                 out_json.write_text(json.dumps(result, indent=2), encoding="utf-8")
         else:
             completed = 0
-            total = len(jobs)
+            total = len(policies)
             with ThreadPoolExecutor(max_workers=num_workers) as pool:
-                futures = {pool.submit(_execute_job, job): job for job in jobs}
+                futures = {pool.submit(_execute_job, p): p for p in policies}
                 for future in as_completed(futures):
-                    policy, run_num = futures[future]
+                    policy = futures[future]
                     completed += 1
                     task_type = policy.get("task_type", "convert")
                     label = f"{policy['id']} ({task_type}/{policy['track']})"
-                    run_tag = f" r{run_num}" if num_runs > 1 else ""
 
                     result = future.result()
                     tool_results.append(result)
 
                     status = "PASS" if result.get("success") else "FAIL"
-                    lines.append(f"  [{completed}/{total}] [{tool_name}] {label}{run_tag} ... {status}")
+                    lines.append(f"  [{completed}/{total}] [{tool_name}] {label} ... {status}")
 
                     run_id = result.get("run_id", f"run_{tool_name}_{policy['id']}")
                     out_json = results_dir / f"{run_id}.json"
