@@ -5,8 +5,8 @@ Policy Conversion Benchmark — main orchestrator.
   dataset → run tools → collect outputs → evaluate → store JSON → generate report
 
 Supports two task types:
-  - **convert** — source policy → converted output (schema + intent + semantic + diff)
-  - **generate** — natural-language prompt → new policy (schema + semantic only)
+  - **convert** — source policy → converted output (schema+CEL + functional test)
+  - **generate** — natural-language prompt → new policy (schema+CEL + functional test)
 
 Usage:
   python3 benchmark.py                                   # all tools, all policies

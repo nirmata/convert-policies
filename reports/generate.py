@@ -87,7 +87,7 @@ def _average_runs(results: list[dict]) -> list[dict]:
         base["runs_averaged"] = n
 
         # Majority vote for booleans
-        for field in ("success", "schema_pass", "intent_pass", "semantic_pass"):
+        for field in ("success", "schema_pass", "semantic_pass"):
             vals = [r.get(field) for r in runs if r.get(field) is not None]
             if vals:
                 base[field] = sum(1 for v in vals if v) > len(vals) / 2
@@ -95,7 +95,7 @@ def _average_runs(results: list[dict]) -> list[dict]:
                 base[field] = None
 
         # Average numerics
-        for field in ("conversion_time_seconds", "cost_usd", "diff_score",
+        for field in ("conversion_time_seconds", "cost_usd",
                        "input_tokens", "output_tokens", "total_tokens"):
             vals = [r[field] for r in runs if r.get(field) is not None]
             if vals:

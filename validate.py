@@ -161,11 +161,9 @@ def main() -> int:
 
     # --- Pretty summary ---
     schema_pass = eval_result["schema_pass"]
-    intent_pass = eval_result.get("intent_pass")
     semantic_pass = eval_result.get("semantic_pass")
     semantic_skipped = eval_result.get("semantic_skipped", True)
     schema_errors = eval_result.get("schema_errors", [])
-    intent_errors = eval_result.get("intent_errors", [])
     semantic_errors = eval_result.get("semantic_errors", [])
 
     print()
@@ -173,44 +171,30 @@ def main() -> int:
     print(f"  {mode_label} validation results")
     print("  " + "-" * 40)
     print(
-        f"  1. Schema   {'PASS' if schema_pass else 'FAIL'}"
-        f"  -- output is valid Kyverno 1.16+ YAML"
+        f"  1. Schema+CEL  {'PASS' if schema_pass else 'FAIL'}"
+        f"  -- valid structure, CEL compiles"
     )
     for e in schema_errors:
         print(f"      - {e}")
 
-    if intent_pass is None:
-        print("  2. Intent   N/A   -- skipped (generation task, no source policy)")
-    else:
-        print(
-            f"  2. Intent   {'PASS' if intent_pass else 'FAIL'}"
-            f"  -- converted policy matches source intent"
-        )
-        for e in intent_errors:
-            print(f"      - {e}")
-
     if semantic_skipped:
         reason = semantic_errors[0] if semantic_errors else "no test dir or kyverno CLI not on PATH"
-        print(f"  3. Semantic SKIP  -- {reason}")
+        print(f"  2. Functional  SKIP  -- {reason}")
     else:
         print(
-            f"  3. Semantic {'PASS' if semantic_pass else 'FAIL'}"
-            f"  -- Kyverno CLI test (policy behavior)"
+            f"  2. Functional  {'PASS' if semantic_pass else 'FAIL'}"
+            f"  -- kyverno test (policy behavior)"
         )
         for e in semantic_errors:
             for i, line in enumerate(e.splitlines()):
                 prefix = "      - " if i == 0 else "        "
                 print(f"{prefix}{line}")
 
-    diff = eval_result.get("diff_score")
-    if diff is not None:
-        print(f"  4. Diff score: {diff}")
-
     print("  " + "-" * 40)
     print(f"  Results: {out_json}")
     print()
 
-    all_pass = schema_pass and (intent_pass is None or intent_pass) and (semantic_skipped or semantic_pass)
+    all_pass = schema_pass and (semantic_skipped or semantic_pass)
     return 0 if all_pass else 1
 
 

@@ -58,7 +58,7 @@ task_types:
   convert:
     description: "Convert an existing policy from source format to Kyverno 1.16+"
     requires_input: true
-    evaluations: [schema, intent, semantic, diff]
+    evaluations: [schema, semantic]
   generate:
     description: "Generate a new policy from a natural-language description"
     requires_input: false
@@ -72,6 +72,6 @@ evaluation:
 # Leaderboard ranked by pass_rate (schema + intent + semantic).
 # Speed, cost, and diff_score reported as separate supplementary metrics.
 # This follows SWE-bench, HumanEval, Aider, and CursorBench conventions —
-# no composite score, no arbitrary weights.
+# no composite score, no arbitrary weights. Schema+CEL + functional only.
 leaderboard:
   rank_by: pass_rate

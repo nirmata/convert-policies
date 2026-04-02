@@ -95,17 +95,21 @@ def evaluate(
     semantic_skipped = True
 
     if not skip_kyverno_test and kyverno_test_dir:
-        output_doc: dict = {}
-        if yaml:
-            try:
-                output_doc = yaml.safe_load(
-                    output_path.read_text(encoding="utf-8", errors="replace")
-                ) or {}
-            except Exception:
-                output_doc = {}
-
-        output_policy_name = (output_doc.get("metadata") or {}).get("name")
-        output_policy_kind = output_doc.get("kind", "")
+        # Reuse Go validator output if available to avoid re-parsing YAML
+        if go_result is not None:
+            output_policy_name = go_result.get("policy_name")
+            output_policy_kind = go_result.get("policy_kind", "")
+        else:
+            output_doc: dict = {}
+            if yaml:
+                try:
+                    output_doc = yaml.safe_load(
+                        output_path.read_text(encoding="utf-8", errors="replace")
+                    ) or {}
+                except Exception:
+                    output_doc = {}
+            output_policy_name = (output_doc.get("metadata") or {}).get("name")
+            output_policy_kind = output_doc.get("kind", "")
         semantic_pass, semantic_errors, semantic_skipped = run_kyverno_test(
             kyverno_test_dir,
             output_policy_name=output_policy_name,
