@@ -32,14 +32,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _CONTAINER_INPUT = "/workspace/policy.yaml"
 _CONTAINER_OUTPUT = "/workspace/output/converted.yaml"
 
-# Default image names (built by docker/build.sh)
-_IMAGES = {
-    "nctl": "benchmark-nctl",
-    "claude": "benchmark-claude",
-    "cursor": "benchmark-cursor",
-    "codex": "benchmark-codex",
-}
-
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -48,7 +40,7 @@ class ContainerRunner(ToolRunner):
 
     def __init__(self, tool_name: str):
         self.name = tool_name
-        self._image = _IMAGES.get(tool_name, f"benchmark-{tool_name}")
+        self._image = f"benchmark-{tool_name}"
         self._env_file = REPO_ROOT / "docker" / "secrets" / f"{tool_name}.env"
 
     def is_available(self) -> bool:
