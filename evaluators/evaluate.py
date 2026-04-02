@@ -50,7 +50,6 @@ def evaluate(
     output_path: Path,
     *,
     expected_output_kind: str | None = None,
-    use_kubectl: bool = True,
     skip_kyverno_test: bool = False,
     kyverno_test_dir: Path | None = None,
     task_type: str = "convert",
@@ -84,7 +83,7 @@ def evaluate(
                 )
     else:
         schema_pass, schema_errors = validate_schema(
-            output_path, expected_kind=expected_output_kind, use_kubectl=use_kubectl
+            output_path, expected_kind=expected_output_kind
         )
     result["schema_pass"] = schema_pass
     result["schema_errors"] = schema_errors

@@ -232,7 +232,6 @@ def _run_single(
                 input_path,
                 output_path,
                 expected_output_kind=expected_kind,
-                use_kubectl=eval_config.get("kubectl_dry_run", True),
                 skip_kyverno_test=eval_config.get("skip_kyverno_test", False),
                 kyverno_test_dir=kyverno_test_dir,
                 task_type=task_type,
@@ -345,7 +344,6 @@ def main() -> int:
     parser.add_argument("--workers", type=int, default=1, help="Parallel workers per tool (default: 1 = sequential)")
     parser.add_argument("--tool-script", help="Path to tool runner script (overrides auto-detection from --tool)")
     parser.add_argument("--skip-kyverno-test", action="store_true")
-    parser.add_argument("--no-kubectl", action="store_true")
     parser.add_argument("--containerized", action="store_true", help="Run tools in isolated Docker containers (no config/memory/skills leak)")
     parser.add_argument("--report", action="store_true", help="Generate report from existing results (no runs)")
     args = parser.parse_args()
@@ -355,8 +353,6 @@ def main() -> int:
     eval_config = config.get("evaluation", {})
     if args.skip_kyverno_test:
         eval_config["skip_kyverno_test"] = True
-    if args.no_kubectl:
-        eval_config["kubectl_dry_run"] = False
 
     if args.report:
         try:

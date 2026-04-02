@@ -55,7 +55,6 @@ def main() -> int:
         "--tool", default="unknown", help="Tool label for results (e.g. nctl, cursor, claude)"
     )
     parser.add_argument("--track", default=None, help="Conversion track (auto-detected if omitted)")
-    parser.add_argument("--no-kubectl", action="store_true", help="Skip kubectl dry-run")
     parser.add_argument(
         "--skip-kyverno-test",
         action="store_true",
@@ -103,7 +102,7 @@ def main() -> int:
 
     # --- Input-only mode ---
     if input_only:
-        passed, errors = validate_input(track, input_path, use_kubectl=not args.no_kubectl)
+        passed, errors = validate_input(track, input_path, use_kubectl=True)
         if passed:
             print("Input policy: PASS (valid legacy policy; safe to convert)")
             return 0
@@ -115,7 +114,7 @@ def main() -> int:
     # --- Conversion mode: validate input first ---
     if not is_generate and input_path:
         input_pass, input_errors = validate_input(
-            track, input_path, use_kubectl=not args.no_kubectl
+            track, input_path, use_kubectl=True
         )
         if not input_pass:
             print("Input policy: FAIL (fix before comparing conversion output)", file=sys.stderr)
@@ -135,7 +134,7 @@ def main() -> int:
         input_path,
         output_path,
         expected_output_kind=args.expected_kind,
-        use_kubectl=not args.no_kubectl,
+        use_kubectl=True,
         skip_kyverno_test=args.skip_kyverno_test,
         kyverno_test_dir=kyverno_test_dir if kyverno_test_dir.is_dir() else None,
         task_type=task_type,
