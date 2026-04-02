@@ -25,12 +25,11 @@ CACHE_DIR="$REPO_ROOT/.cache"
 GO_VALIDATOR="$REPO_ROOT/validate-policy"
 SCHEMA_DIR="$REPO_ROOT/cmd/validate-policy/schemas/openapi/v3"
 
-# Kyverno version to fetch schemas for (should match go.mod)
-KYVERNO_VERSION="v1.17.1"
-KYVERNO_API_VERSION="v0.0.1-alpha.2"
+# nctl version detection (Homebrew formula is the public source for latest version)
 
 # nctl download
-NCTL_INSTALL_SCRIPT="https://downloads.nirmata.io/nctl/install.sh"
+NCTL_DOWNLOAD_BASE="https://dl.nirmata.io/nctl"
+HOMEBREW_FORMULA_URL="https://raw.githubusercontent.com/nirmata/homebrew-tap/main/nctl.rb"
 NCTL_CACHE="$CACHE_DIR/nctl"
 
 # ---------------------------------------------------------------------------
@@ -45,6 +44,14 @@ check_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "$1 is required but not found. $2"
 }
 
+has_flag() {
+  local flag="$1"; shift
+  for arg in "$@"; do
+    [ "$arg" = "$flag" ] && return 0
+  done
+  return 1
+}
+
 # ---------------------------------------------------------------------------
 # 1. Dependency checks
 # ---------------------------------------------------------------------------
@@ -54,7 +61,7 @@ check_deps() {
   check_cmd go "Install Go 1.25+ (needed to build the policy validator)"
 
   # Docker only needed for --containerized
-  if echo "$@" | grep -q -- "--containerized"; then
+  if has_flag "--containerized" "$@"; then
     check_cmd docker "Install Docker Desktop or OrbStack"
   fi
 
@@ -68,44 +75,12 @@ check_deps() {
 # 2. Download + cache OpenAPI schemas
 # ---------------------------------------------------------------------------
 
-fetch_schemas() {
-  if [ -d "$SCHEMA_DIR/apis/policies.kyverno.io" ] && [ -f "$SCHEMA_DIR/apis/policies.kyverno.io/v1beta1.json" ]; then
+check_schemas() {
+  # Schemas are committed in cmd/validate-policy/schemas/. Just verify they exist.
+  if [ -f "$SCHEMA_DIR/apis/policies.kyverno.io/v1beta1.json" ]; then
     return 0
   fi
-
-  info "Downloading Kyverno OpenAPI schemas (cached after first run)..."
-  mkdir -p "$CACHE_DIR/schemas"
-
-  local api_ref="$KYVERNO_API_VERSION"
-  local base_url="https://raw.githubusercontent.com/kyverno/api/${api_ref}"
-
-  mkdir -p "$SCHEMA_DIR/apis/kyverno.io" "$SCHEMA_DIR/apis/policies.kyverno.io"
-
-  # kyverno.io schemas (from kyverno/kyverno repo)
-  local kyverno_base="https://raw.githubusercontent.com/kyverno/kyverno/${KYVERNO_VERSION}"
-  for ver in v1 v2 v2beta1; do
-    local dest="$SCHEMA_DIR/apis/kyverno.io/${ver}.json"
-    if [ ! -f "$dest" ]; then
-      # Schemas are generated — try the api repo first, fall back to cache
-      if [ -f "$CACHE_DIR/schemas/kyverno.io-${ver}.json" ]; then
-        cp "$CACHE_DIR/schemas/kyverno.io-${ver}.json" "$dest"
-      else
-        warn "Schema kyverno.io/${ver}.json not found in cache. Run 'make codegen-schema-openapi' in go-llm-apps or copy schemas manually."
-      fi
-    fi
-  done
-
-  # policies.kyverno.io schemas (from kyverno/api repo)
-  for ver in v1alpha1 v1beta1 v1; do
-    local dest="$SCHEMA_DIR/apis/policies.kyverno.io/${ver}.json"
-    if [ ! -f "$dest" ]; then
-      if [ -f "$CACHE_DIR/schemas/policies.kyverno.io-${ver}.json" ]; then
-        cp "$CACHE_DIR/schemas/policies.kyverno.io-${ver}.json" "$dest"
-      else
-        warn "Schema policies.kyverno.io/${ver}.json not found in cache. Run 'make codegen-schema-openapi' in go-llm-apps or copy schemas manually."
-      fi
-    fi
-  done
+  die "OpenAPI schemas missing at $SCHEMA_DIR. They should be committed in the repo — run 'git checkout cmd/validate-policy/schemas/' to restore."
 }
 
 # ---------------------------------------------------------------------------
@@ -118,8 +93,8 @@ build_go_validator() {
   fi
 
   info "Building Go policy validator..."
-  fetch_schemas
-  (cd "$REPO_ROOT/cmd/validate-policy" && GOWORK=off go build -o "$GO_VALIDATOR" .)
+  check_schemas
+  (cd "$REPO_ROOT/cmd/validate-policy" && GOWORK=off go build -o "$GO_VALIDATOR" .) || die "Go validator build failed. Check Go installation and dependencies."
   info "Built: $GO_VALIDATOR"
 }
 
@@ -140,22 +115,40 @@ fetch_nctl() {
     return 0
   fi
 
-  info "Downloading nctl binary for Docker builds..."
+  info "Downloading nctl Linux binary for Docker builds..."
   mkdir -p "$NCTL_CACHE"
 
-  # Download using the official install script into a temp dir, then extract
+  # Detect target arch for Docker (arm64 on Apple Silicon, amd64 otherwise)
+  local arch
+  case "$(uname -m)" in
+    aarch64|arm64) arch="arm64" ;;
+    *)             arch="amd64" ;;
+  esac
+
+  # Get latest version from Homebrew formula (same source the install script uses)
+  local version
+  version=$(curl -fsSL "$HOMEBREW_FORMULA_URL" 2>/dev/null | grep -o 'version "[^"]*"' | head -1 | tr -d '"' | awk '{print $2}')
+  if [ -z "$version" ]; then
+    die "Failed to detect nctl version. Check $HOMEBREW_FORMULA_URL"
+  fi
+
+  # Download Linux binary directly (the install script would get the host OS)
+  local url="https://dl.nirmata.io/nctl/v${version}/nctl_${version}_linux_${arch}.zip"
   local tmpdir
   tmpdir=$(mktemp -d)
-  NCTL_INSTALL_DIR="$tmpdir" bash <(curl -fsSL "$NCTL_INSTALL_SCRIPT") 2>&1 | tail -5
+
+  info "Fetching nctl v${version} linux/${arch} from $url"
+  curl -fsSL "$url" -o "$tmpdir/nctl.zip" || die "Failed to download nctl from $url"
+  unzip -q "$tmpdir/nctl.zip" -d "$tmpdir" || die "Failed to extract nctl"
 
   if [ -f "$tmpdir/nctl" ]; then
+    chmod +x "$tmpdir/nctl"
     cp "$tmpdir/nctl" "$NCTL_CACHE/nctl"
     cp "$tmpdir/nctl" "$nctl_bin"
-    chmod +x "$nctl_bin"
-    info "nctl cached at $NCTL_CACHE/nctl"
+    info "nctl v${version} linux/${arch} cached"
   else
     rm -rf "$tmpdir"
-    die "Failed to download nctl. Install manually and place at docker/nctl"
+    die "nctl binary not found in archive. Place manually at docker/nctl"
   fi
   rm -rf "$tmpdir"
 }
@@ -184,12 +177,13 @@ build_docker_images() {
   info "Building Docker images..."
   fetch_nctl
 
-  cd "$REPO_ROOT/docker"
-  docker build -f Dockerfile.base -t benchmark-base . 2>&1 | tail -3
-  docker build -f Dockerfile.nctl -t benchmark-nctl --build-arg NCTL_BIN=nctl . 2>&1 | tail -3
-  docker build -f Dockerfile.claude -t benchmark-claude . 2>&1 | tail -3
-  docker build -f Dockerfile.cursor -t benchmark-cursor . 2>&1 | tail -3
-  cd "$REPO_ROOT"
+  (
+    cd "$REPO_ROOT/docker"
+    docker build -f Dockerfile.base -t benchmark-base . 2>&1 | tail -3
+    docker build -f Dockerfile.nctl -t benchmark-nctl --build-arg NCTL_BIN=nctl . 2>&1 | tail -3
+    docker build -f Dockerfile.claude -t benchmark-claude . 2>&1 | tail -3
+    docker build -f Dockerfile.cursor -t benchmark-cursor . 2>&1 | tail -3
+  )
   info "Docker images built."
 }
 

@@ -35,11 +35,8 @@ docker/nctl
 # Local cache (schemas, binaries — downloaded on first run)
 .cache/
 
-# Compiled Go validator binary
-validate-policy
-
-# Go validator schemas (fetched at build time by run-benchmark.sh)
-cmd/validate-policy/schemas/openapi/v3/apis/
+# Compiled Go validator binary (at repo root, not the cmd/ source dir)
+/validate-policy
 
 # Kyverno policies sync (see scripts/sync_kyverno_policies.py)
 dataset/.cache/
