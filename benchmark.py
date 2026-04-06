@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -401,7 +402,16 @@ def main() -> int:
         ]
 
     results_dir = REPO_ROOT / "results"
-    results_dir.mkdir(parents=True, exist_ok=True)
+    output_base = REPO_ROOT / "output"
+
+    # Clean previous run artifacts so each run starts fresh.
+    shutil.rmtree(results_dir, ignore_errors=True)
+    for tool_name in tools_to_run:
+        tool_out = output_base / tool_name
+        if tool_out.is_dir():
+            shutil.rmtree(tool_out)
+
+    results_dir.mkdir(parents=True)
 
     all_results: list[dict] = []
 
