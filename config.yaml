@@ -72,9 +72,9 @@ evaluation:
   skip_kyverno_test: false
   timeout_seconds: 600
 
-# Leaderboard ranked by pass_rate (schema + intent + semantic).
-# Speed, cost, and diff_score reported as separate supplementary metrics.
+# Leaderboard ranked by pass_rate (schema + CEL + functional).
+# Speed and cost reported as separate supplementary metrics.
 # This follows SWE-bench, HumanEval, Aider, and CursorBench conventions —
-# no composite score, no arbitrary weights. Schema+CEL + functional only.
+# no composite score, no arbitrary weights.
 leaderboard:
   rank_by: pass_rate

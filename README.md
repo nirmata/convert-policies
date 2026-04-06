@@ -61,7 +61,7 @@ CURSOR_API_KEY=crsr_...
 
 ### Containerized Isolation
 
-Each agent runs in an ephemeral Docker container with **zero custom config** — no memory, no CLAUDE.md, no MCP servers, no skills beyond what ships with the tool. The container sees only:
+Each agent runs in an ephemeral Docker container — no memory, no CLAUDE.md, no MCP servers. Public Kyverno skills are installed for domain knowledge parity with nctl's built-in skills. The container sees only:
 
 - `/workspace/policy.yaml` — the single input policy
 - `/workspace/output/` — empty directory to write the converted policy
@@ -78,14 +78,14 @@ This tests what the agent actually knows, not what we tell it.
 
 ## Dataset
 
-30 curated tasks, **every one with upstream kyverno functional tests** from [kyverno/policies](https://github.com/kyverno/policies). No unverifiable tasks.
+32 curated tasks, **every one with upstream kyverno functional tests** from [kyverno/policies](https://github.com/kyverno/policies). No unverifiable tasks.
 
 | Output Kind | Easy | Medium | Hard | Total |
 |------------|------|--------|------|-------|
-| ValidatingPolicy | 6 | 6 | 6 | **18** |
+| ValidatingPolicy | 6 | 6 | 8 | **20** |
 | MutatingPolicy | 3 | 3 | 2 | **8** |
 | GeneratingPolicy | 1 | 2 | 1 | **4** |
-| **Total** | **10** | **11** | **9** | **30** |
+| **Total** | **10** | **11** | **11** | **32** |
 
 Tasks are defined in `dataset/index.yaml`. Policies are synced from upstream via `dataset/kyverno-upstream-manifest.yaml`.
 
@@ -134,7 +134,7 @@ convert-policies/
     entrypoints/run-{nctl,claude,cursor}.sh
     secrets/                      # API keys (gitignored)
   dataset/
-    index.yaml                    # 30 curated tasks with kyverno tests
+    index.yaml                    # 32 curated tasks with kyverno tests
     kyverno-upstream-manifest.yaml
     imported/                     # Synced from kyverno/policies
   runners/                        # Tool harnesses

@@ -56,13 +56,23 @@ def _load_results(include_files: list[str] | None = None) -> list[dict]:
                 results.extend(data)
             elif isinstance(data, dict) and "policy_id" in data:
                 results.append(data)
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            print(f"  Warning: skipping corrupt result file {f.name}: {exc}", file=sys.stderr)
+            continue
+        except OSError as exc:
+            print(f"  Warning: could not read result file {f.name}: {exc}", file=sys.stderr)
             continue
     return results
 
 
 def _deduplicate_runs(results: list[dict]) -> list[dict]:
-    """If multiple runs exist for the same (tool, policy_id), keep the latest only."""
+    """If multiple runs exist for the same (tool, policy_id), keep the latest only.
+
+    Uses the ``timestamp`` field (ISO-8601) for ordering so that results are
+    correctly ranked regardless of the alphabetical sort order of result filenames
+    (e.g. ``run_*`` files sort after ``benchmark_*`` files even if older).
+    Falls back to load order when timestamp is absent.
+    """
     from collections import defaultdict
 
     groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
@@ -70,7 +80,11 @@ def _deduplicate_runs(results: list[dict]) -> list[dict]:
         key = (r.get("tool", ""), r.get("policy_id", ""))
         groups[key].append(r)
 
-    return [runs[-1] for runs in groups.values()]
+    def _latest(runs: list[dict]) -> dict:
+        timestamped = [(r.get("timestamp", ""), r) for r in runs]
+        return max(timestamped, key=lambda t: t[0])[1]
+
+    return [_latest(runs) for runs in groups.values()]
 
 
 def _aggregate(results: list[dict]) -> dict:
@@ -91,7 +105,15 @@ def _aggregate(results: list[dict]) -> dict:
         total = len(items)
         passed = sum(1 for i in items if i.get("success"))
         schema_pass = sum(1 for i in items if i.get("schema_pass"))
+        # Count functional tests: if a kyverno_test_dir exists, the test is
+        # applicable even if the tool produced no output (semantic_skipped due
+        # to no output should count as a failure, not reduce the denominator).
         semantic_items = [i for i in items if not i.get("semantic_skipped", True)]
+        # Policies skipped only because tool produced no output count against total
+        no_output_skips = [
+            i for i in items
+            if i.get("semantic_skipped", True) and not i.get("success") and not i.get("schema_pass")
+        ]
         semantic_pass = sum(1 for i in semantic_items if i.get("semantic_pass"))
         times = [i["conversion_time_seconds"] for i in items if i.get("conversion_time_seconds")]
         costs = [i["cost_usd"] for i in items if i.get("cost_usd") is not None]
@@ -101,7 +123,7 @@ def _aggregate(results: list[dict]) -> dict:
             "pass_rate": round(passed / total, 4) if total else 0,
             "schema_pass": schema_pass,
             "semantic_pass": semantic_pass,
-            "semantic_total": len(semantic_items),
+            "semantic_total": len(semantic_items) + len(no_output_skips),
             "avg_time": round(sum(times) / len(times), 2) if times else None,
             "avg_cost": round(sum(costs) / len(costs), 6) if costs else None,
         }
@@ -147,8 +169,8 @@ def generate_markdown(agg: dict, leaderboard: list[dict]) -> str:
         try:
             tpl = env.get_template("report.md.j2")
             return tpl.render(agg=agg, leaderboard=leaderboard)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"  Warning: report.md.j2 render failed ({exc!r}); using fallback", file=sys.stderr)
 
     # Fallback: build markdown directly
     lines: list[str] = []
@@ -232,16 +254,16 @@ def generate_html(
             )
         except Exception as exc:
             print(
-                f"dashboard.html.j2 render failed ({exc!r}); "
-                "using minimal fallback. Install jinja2 (e.g. pip install -r requirements.txt).",
+                f"dashboard.html.j2 template rendering failed ({exc!r}); "
+                "using minimal fallback.",
                 file=sys.stderr,
             )
 
-    # Fallback: install jinja2 for the full dashboard
+    # Fallback: minimal dashboard (Jinja2 missing or template error)
     return (
         f"<html><body style='font-family:sans-serif;padding:2rem;background:#0d1117;color:#c9d1d9'>"
         f"<h1>Policy Conversion Benchmark</h1>"
-        f"<p>Install Jinja2 for the full dashboard: <code>pip install jinja2</code></p>"
+        f"<p>Jinja2 template rendering failed or Jinja2 is not installed. Install or fix: <code>pip install jinja2</code></p>"
         f"<p>Generated: {agg['generated_at']}</p>"
         f"<p>{len(agg['results'])} results from {len(agg['tool_stats'])} tools</p>"
         f"</body></html>"

@@ -4,8 +4,8 @@ Validate a converted or generated policy.
 
 Three modes:
   1. **Input-only** — validate a source policy before converting.
-  2. **Conversion** (input + output) — schema + intent + semantic + diff.
-  3. **Generation / output-only** (output only, no input) — schema + semantic.
+  2. **Conversion** (input + output) — schema + CEL + functional test.
+  3. **Generation / output-only** (output only, no input) — schema + CEL.
 
 Usage:
   # Validate input policy only:
@@ -39,8 +39,8 @@ from evaluators.evaluate import evaluate, validate_input
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate converted or generated policy (schema + intent + semantic). "
-        "Omit --input for generation-only validation (schema + semantic)."
+        description="Validate converted or generated policy (schema + CEL + functional). "
+        "Omit --input for generation-only validation (schema + CEL)."
     )
     parser.add_argument(
         "--input",
