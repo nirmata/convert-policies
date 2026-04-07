@@ -82,7 +82,7 @@ class ContainerRunner(ToolRunner):
                 model=f"{self.name}-container",
             )
 
-        create_cmd = ["docker", "create"]
+        create_cmd = ["docker", "create", "--network", "host"]
         if self._env_file.is_file():
             create_cmd += ["--env-file", str(self._env_file)]
         for key, val in config.get("container_env", {}).items():
