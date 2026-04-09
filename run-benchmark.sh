@@ -62,6 +62,7 @@ required_env_vars_for_tool() {
     nctl) echo "NIRMATA_TOKEN NIRMATA_URL" ;;
     claude) echo "ANTHROPIC_API_KEY" ;;
     cursor) echo "CURSOR_API_KEY" ;;
+    codex) echo "CODEX_API_KEY" ;;
     *) echo "" ;;
   esac
 }

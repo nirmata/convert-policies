@@ -84,26 +84,15 @@ class ContainerRunner(ToolRunner):
                 success=False,
                 error=(
                     f"Missing required container credentials for {self.name}: {vars_joined}. "
-                    f"Create {self._env_file} with these keys."
+                    f"Set them in your shell environment or in {self._env_file}."
                 ),
                 model=f"{self.name}-container",
             )
 
+        env_vars = self._container_env_vars(config)
         create_cmd = ["docker", "create", "--network", "host"]
-        if self._env_file.is_file():
-            create_cmd += ["--env-file", str(self._env_file)]
-
-        # Always forward host env values for required keys when present.
-        # This allows running without docker/secrets/*.env files.
-        for key in _REQUIRED_ENV_BY_TOOL.get(self.name, []):
-            value = os.environ.get(key)
-            if value:
-                create_cmd += ["-e", f"{key}={value}"]
-
-        for key, val in config.get("container_env", {}).items():
-            if not _ENV_KEY_RE.match(key):
-                raise ValueError(f"Invalid env var name in container_env: {key!r}")
-            create_cmd += ["-e", f"{key}={val}"]
+        for key, value in env_vars.items():
+            create_cmd += ["-e", f"{key}={value}"]
         create_cmd += [self._image, container_prompt]
 
         start = time.monotonic()
@@ -245,22 +234,45 @@ class ContainerRunner(ToolRunner):
         if not required:
             return []
 
-        found: set[str] = {k for k in required if os.environ.get(k)}
-
-        if self._env_file.is_file():
-            try:
-                for line in self._env_file.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if not line or line.startswith("#") or "=" not in line:
-                        continue
-                    key, value = line.split("=", 1)
-                    key = key.strip()
-                    if key in required and value.strip():
-                        found.add(key)
-            except OSError as exc:
-                print(f"  Warning: could not read {self._env_file}: {exc}", file=sys.stderr)
+        found = set(self._container_env_vars().keys())
 
         return [k for k in required if k not in found]
+
+    def _container_env_vars(self, config: dict | None = None) -> dict[str, str]:
+        env_vars = self._load_env_file()
+
+        # Host env takes precedence over env-file values for required credentials.
+        for key in _REQUIRED_ENV_BY_TOOL.get(self.name, []):
+            value = os.environ.get(key)
+            if value:
+                env_vars[key] = value
+
+        if config:
+            for key, val in config.get("container_env", {}).items():
+                if not _ENV_KEY_RE.match(key):
+                    raise ValueError(f"Invalid env var name in container_env: {key!r}")
+                env_vars[key] = val
+
+        return env_vars
+
+    def _load_env_file(self) -> dict[str, str]:
+        if not self._env_file.is_file():
+            return {}
+
+        env_vars: dict[str, str] = {}
+        try:
+            for line in self._env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if _ENV_KEY_RE.match(key) and value.strip():
+                    env_vars[key] = value.strip()
+        except OSError as exc:
+            print(f"  Warning: could not read {self._env_file}: {exc}", file=sys.stderr)
+
+        return env_vars
 
     @staticmethod
     def _rewrite_prompt(prompt: str, input_path: Path | None, output_path: Path) -> str:
