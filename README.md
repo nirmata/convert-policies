@@ -1,14 +1,22 @@
-# Policy Conversion Benchmark
+# Policy As Code Benchmark
 
-A **public, reproducible benchmark** for converting Kyverno ClusterPolicies to the new Kyverno 1.16+ policy types. Compares **nctl**, **Claude Code**, **Cursor**, or any other AI tool using identical inputs, bare-minimum prompts, containerized isolation, and rigorous validation.
+A **public benchmark** for Policy as Code for Kyverno policy types. Compares **[Nirmata Platform Assistant](https://nirmata.com/nctl-ai/)**, **Claude Code**, and **Cursor**, using identical inputs, bare-minimum prompts, containerized isolation, and rigorous validation.
 
 ## Leaderboard
+
+![Leaderboard Dashboard](https://github.com/user-attachments/assets/56bc0a22-61ec-4bd1-a49d-72f66b8afc28)
+
+**Dashboard:** <https://nirmata.github.io/convert-policies/>
 
 Ranked by **pass rate only** — the percentage of tasks that pass all validation layers. No composite scores, no arbitrary weights. This matches how [SWE-bench](https://www.swebench.com/), [HumanEval](https://github.com/openai/human-eval), [Aider](https://aider.chat/docs/leaderboards/), and every other major AI coding benchmark ranks tools.
 
 Speed and cost are reported as supplementary metrics, not factored into ranking. The HTML dashboard includes an accuracy-vs-cost scatter plot for Pareto frontier visualization.
 
-Public dashboard: https://nirmata.github.io/convert-policies/
+## Included Tests
+
+The benchmarks currently focus on converting Kyverno ClusterPolicies to the new Kyverno 1.16+ policy types.
+
+Additional tests, such as generating various policy types, and generating policy tests, are planned.
 
 ## Quick Start
 
@@ -53,7 +61,7 @@ CURSOR_API_KEY=crsr_...
 
 ## How It Works
 
-```
+```sh
 ./run-benchmark.sh --tool nctl claude --containerized
   |
   |  [1/6] Check dependencies (python3, go, docker, kyverno)
@@ -80,7 +88,7 @@ After the container exits, the host extracts the output and validates it. The co
 
 No version hints, no CEL instructions, no coaching:
 
-> "Convert the Kyverno ClusterPolicy in /workspace/policy.yaml to a ValidatingPolicy. Write the converted policy to /workspace/output/converted.yaml."
+> "Convert the Kyverno ClusterPolicy in /workspace/policy.yaml to a Kyverno CEL based ValidatingPolicy, MutaingPolicy, or a GeneratingPolicy type. Write the converted policy to /workspace/output/converted.yaml."
 
 This tests what the agent actually knows, not what we tell it.
 
@@ -101,7 +109,7 @@ Tasks are defined in `dataset/index.yaml`. Policies are synced from upstream via
 
 Three layers. If any fails, the task is a failure.
 
-### 1. Schema + CEL (Go binary)
+### 1. Schema + CEL
 
 A standalone Go binary (`cmd/validate-policy/`) that imports Kyverno's actual CEL compilers and OpenAPI schemas — the same validation approach used by [go-llm-apps](https://github.com/nirmata/go-llm-apps) benchmarks.
 
@@ -124,7 +132,7 @@ Verifies the output kind matches what the dataset specifies (e.g., task says Val
 
 ## Folder Layout
 
-```
+```sh
 convert-policies/
   run-benchmark.sh               # One-command runner (builds, syncs, benchmarks, reports)
   benchmark.py                    # Main orchestrator
@@ -155,10 +163,6 @@ convert-policies/
   results/                        # Per-run JSON (gitignored)
 ```
 
-## Contributing
-
-See the contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md).
-
 ## Transparency
 
 - **Open dataset** — all policies from [kyverno/policies](https://github.com/kyverno/policies) at a pinned revision
@@ -166,6 +170,11 @@ See the contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Failures shown** — raw JSON results include errors, no aggregation hiding
 - **No special treatment** — nctl uses the same prompts and isolation as Claude and Cursor
 - **Functional proof** — every task is validated with real test resources, not just schema checks
+
+
+## Contributing
+
+All contributions and suggestions are welcome! See the contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
