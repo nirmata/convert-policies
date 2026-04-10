@@ -74,7 +74,10 @@ def evaluate(
     kind_errors: list[str] = []
     kind_skipped = expected_output_kind is None
 
-    if expected_output_kind and yaml:
+    if expected_output_kind and yaml is None:
+        kind_pass = False
+        kind_errors.append("PyYAML not installed; cannot check expected kind")
+    elif expected_output_kind:
         try:
             raw = output_path.read_text(encoding="utf-8", errors="replace")
             doc = yaml.safe_load(raw)
