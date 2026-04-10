@@ -342,9 +342,18 @@ class ContainerRunner(ToolRunner):
 
     @staticmethod
     def _rewrite_prompt(prompt: str, input_path: Path | None, output_path: Path) -> str:
-        """Replace host-absolute paths in the prompt with container paths."""
+        """Replace host-absolute paths in the prompt with container paths.
+
+        For generation tasks the orchestrator passes ``input_path == output_path``
+        as a sentinel (no source file exists). In that case, replacing
+        ``input_path`` first would consume the host output path string before
+        the second replace can rewrite it to ``_CONTAINER_OUTPUT``, leaving
+        the prompt telling the agent to write to ``/workspace/policy.yaml`` —
+        which the orchestrator never reads back. Skip the input replace
+        whenever ``input_path == output_path``.
+        """
         rewritten = prompt
-        if input_path and str(input_path) in rewritten:
+        if input_path and input_path != output_path and str(input_path) in rewritten:
             rewritten = rewritten.replace(str(input_path), _CONTAINER_INPUT)
         rewritten = rewritten.replace(str(output_path), _CONTAINER_OUTPUT)
         return rewritten
