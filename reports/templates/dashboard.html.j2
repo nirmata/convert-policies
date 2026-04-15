@@ -3,23 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Policy as Code Benchmark</title>
+<title>Policy as Code Benchmark — Nirmata</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Ubuntu:wght@500;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0e14; --fg: #d4d4d8; --card: #12161e; --border: #1e2530;
-    --accent: #6ea8fe; --green: #4ade80; --red: #f87171; --yellow: #fbbf24;
-    --muted: #71717a;
+    --bg: #020e1d; --fg: #D3DEF4; --card: #132448; --border: #1e345d;
+    --accent: #71CFEB; --green: #459666; --red: #FF262A; --yellow: #F3782C;
+    --muted: #A7B0BA; --orange: #F3782C; --cyan: #71CFEB;
+    --blue: #2E5596; --light-bg: #F3F6FB;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-         background: var(--bg); color: var(--fg); padding: 3rem; max-width: 1200px; margin: 0 auto; }
+  body { font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+         background: var(--bg); color: var(--fg); padding: 2rem 3rem; max-width: 1200px; margin: 0 auto; }
 
-  h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.15rem; }
+  /* Header / Branding */
+  .header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
+  .nirmata-logo { height: 40px; }
+  .nirmata-logo svg { height: 40px; width: auto; }
+  h1 { font-family: 'Ubuntu', sans-serif; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.15rem; color: #FFFFFF; }
+  h2 { font-family: 'Ubuntu', sans-serif; }
   .subtitle { color: var(--muted); font-size: 0.82rem; margin-bottom: 2.5rem; }
 
   /* Leaderboard */
-  .leaderboard { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  .leaderboard { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
                  padding: 2rem; margin-bottom: 2rem; }
   .leaderboard h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
                      color: var(--muted); margin-bottom: 1.25rem; }
@@ -28,54 +37,150 @@
                  color: var(--muted); font-weight: 600; padding: 0 0.75rem 0.75rem; text-align: left; }
   .lb-table td { padding: 0.85rem 0.75rem; border-top: 1px solid var(--border); }
   .lb-table tr:first-child td { border-top: none; }
-  .tool-name { font-weight: 700; font-size: 1rem; }
-  .pass-rate { font-size: 1.8rem; font-weight: 800; }
+  .tool-name { font-family: 'Ubuntu', sans-serif; font-weight: 700; font-size: 1rem; }
+  .pass-rate { font-family: 'Ubuntu', sans-serif; font-size: 1.8rem; font-weight: 700; }
   .pass-rate.high { color: var(--green); }
-  .pass-rate.mid { color: var(--yellow); }
+  .pass-rate.mid { color: var(--orange); }
   .pass-rate.low { color: var(--red); }
   .metric { font-size: 0.9rem; color: var(--fg); }
   .metric-label { font-size: 0.7rem; color: var(--muted); }
   .rank { display: inline-flex; align-items: center; justify-content: center;
           width: 30px; height: 30px; border-radius: 50%; font-weight: 800; font-size: 0.9rem; }
-  .rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #000; }
-  .rank-2 { background: linear-gradient(135deg, #9ca3af, #6b7280); color: #000; }
-  .rank-3 { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; }
+  .rank-1 { background: linear-gradient(135deg, #F3782C, #ff9a56); color: #fff; }
+  .rank-2 { background: linear-gradient(135deg, #71CFEB, #335D84); color: #fff; }
+  .rank-3 { background: linear-gradient(135deg, #2E5596, #4e749d); color: #fff; }
   .rank-n { background: var(--border); color: var(--fg); }
 
   /* Charts grid */
   .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
-  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; }
+  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; }
   .chart-card h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
                     color: var(--muted); margin-bottom: 1rem; }
   canvas { max-height: 280px; }
 
   /* Results table */
-  .results { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  .results { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
              padding: 2rem; }
   .results h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
                 color: var(--muted); margin-bottom: 1.25rem; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .res-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
   .res-table th { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
-                  color: var(--muted); font-weight: 600; padding: 0 0.6rem 0.6rem; text-align: left; }
+                  color: var(--muted); font-weight: 600; padding: 0 0.6rem 0.6rem; text-align: left;
+                  white-space: nowrap; }
   .res-table td { padding: 0.55rem 0.6rem; border-top: 1px solid var(--border); }
-  .pass { color: var(--green); font-weight: 600; }
-  .fail { color: var(--red); font-weight: 600; }
+  .pass { color: #ABEFC6; font-weight: 600; }
+  .fail { color: #ff797a; font-weight: 600; }
+  .clickable { cursor: pointer; transition: background 0.15s; border-radius: 4px; }
+  .clickable:hover { background: rgba(113, 207, 235, 0.1); }
   .err-text { font-size: 0.72rem; color: var(--muted); max-width: 350px;
               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* About section */
-  .about { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  .about { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
            padding: 1.5rem 2rem; margin-bottom: 2rem; line-height: 1.6; font-size: 0.88rem; color: var(--fg); }
   .about p { margin-bottom: 0.75rem; }
   .about p:last-child { margin-bottom: 0; }
   .about a { color: var(--accent); text-decoration: none; }
   .about a:hover { text-decoration: underline; }
 
-  @media (max-width: 800px) { .charts { grid-template-columns: 1fr; } }
+  /* Footer */
+  .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border);
+            text-align: center; color: var(--muted); font-size: 0.75rem; }
+  .footer a { color: var(--accent); text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+
+  /* ---- Modal ---- */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(2,14,29,0.85);
+                   z-index: 1000; justify-content: center; align-items: flex-start;
+                   padding: 3vh 1rem; overflow-y: auto; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+           width: 100%; max-width: 780px; margin: 0 auto; overflow: hidden;
+           animation: slideUp 0.2s ease-out; }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .modal-header { display: flex; align-items: center; justify-content: space-between;
+                  padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); }
+  .modal-header h3 { font-family: 'Ubuntu', sans-serif; font-size: 1rem; font-weight: 700; color: #fff; }
+  .modal-badge { display: inline-block; padding: 0.2rem 0.7rem; border-radius: 100px;
+                 font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  .modal-badge.pass-badge { background: rgba(69,150,102,0.2); color: #ABEFC6; }
+  .modal-badge.fail-badge { background: rgba(255,38,42,0.15); color: #ff797a; }
+  .modal-close { background: none; border: none; color: var(--muted); font-size: 1.5rem;
+                 cursor: pointer; padding: 0 0.25rem; line-height: 1; }
+  .modal-close:hover { color: #fff; }
+  .modal-body { padding: 1.5rem; }
+
+  /* Metrics bar */
+  .metrics-bar { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+  .metric-chip { background: rgba(30,52,93,0.6); border-radius: 8px; padding: 0.5rem 0.85rem; }
+  .metric-chip .mc-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;
+                           color: var(--muted); display: block; margin-bottom: 0.15rem; }
+  .metric-chip .mc-value { font-family: 'Ubuntu', sans-serif; font-size: 0.95rem; font-weight: 700; color: #fff; }
+
+  /* Validation pipeline */
+  .pipeline { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; }
+  .pipe-step { display: flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.7rem;
+               border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+  .pipe-pass { background: rgba(69,150,102,0.15); color: #ABEFC6; }
+  .pipe-fail { background: rgba(255,38,42,0.12); color: #ff797a; }
+  .pipe-skip { background: rgba(167,176,186,0.1); color: var(--muted); }
+  .pipe-icon { font-size: 0.85rem; }
+
+  /* Collapsible sections */
+  .section-toggle { width: 100%; background: rgba(30,52,93,0.4); border: 1px solid var(--border);
+                    border-radius: 8px; padding: 0.65rem 1rem; margin-bottom: 0.5rem;
+                    color: var(--fg); font-family: 'Ubuntu', sans-serif; font-size: 0.8rem;
+                    font-weight: 600; cursor: pointer; text-align: left;
+                    display: flex; align-items: center; justify-content: space-between; }
+  .section-toggle:hover { background: rgba(30,52,93,0.7); }
+  .section-toggle .arrow { transition: transform 0.2s; font-size: 0.7rem; color: var(--muted); }
+  .section-toggle.expanded .arrow { transform: rotate(90deg); }
+  .section-content { display: none; margin-bottom: 1rem; }
+  .section-content.open { display: block; }
+  .code-block { background: #0a1628; border: 1px solid var(--border); border-radius: 8px;
+                padding: 1rem; overflow-x: auto; margin-top: 0.5rem; }
+  .code-block pre { font-family: 'Menlo', 'Consolas', monospace; font-size: 0.75rem;
+                    color: var(--fg); white-space: pre-wrap; word-break: break-word;
+                    line-height: 1.5; margin: 0; }
+  .error-list { list-style: none; padding: 0; margin-top: 0.5rem; }
+  .error-list li { background: rgba(255,38,42,0.08); border-left: 3px solid var(--red);
+                   padding: 0.5rem 0.75rem; margin-bottom: 0.35rem; border-radius: 0 6px 6px 0;
+                   font-size: 0.78rem; color: #ff797a; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { padding: 1rem; }
+    .charts { grid-template-columns: 1fr; }
+    h1 { font-size: 1.2rem; }
+    .pass-rate { font-size: 1.4rem; }
+    .leaderboard, .chart-card, .results, .about { padding: 1.25rem; border-radius: 10px; }
+    .modal { max-width: 100%; border-radius: 10px; }
+    .metrics-bar { gap: 0.5rem; }
+    .metric-chip { flex: 1 1 calc(50% - 0.5rem); min-width: 0; }
+  }
+  @media (max-width: 480px) {
+    body { padding: 0.75rem; }
+    .header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+    .subtitle { font-size: 0.72rem; margin-bottom: 1.5rem; }
+    .leaderboard, .chart-card, .results, .about { padding: 1rem; }
+    .lb-table th, .lb-table td { padding: 0.5rem 0.4rem; font-size: 0.78rem; }
+    .tool-name { font-size: 0.85rem; }
+    .pass-rate { font-size: 1.2rem; }
+    .metric-chip { flex: 1 1 100%; }
+  }
 </style>
 </head>
 <body>
 
+<div class="header">
+  <div class="nirmata-logo">
+    {% include 'nirmata-logo.svg' %}
+  </div>
+</div>
 <h1>Policy as Code Benchmark</h1>
 <p class="subtitle">{{ agg.generated_at[:10] }} &middot; {{ agg.results | length }} tasks &middot; {{ agg.tool_stats | length }} tools &middot; Bare-minimum prompts, containerized isolation</p>
 
@@ -94,6 +199,7 @@
 {# ---- Leaderboard ---- #}
 <div class="leaderboard">
   <h2>Leaderboard &mdash; ranked by pass rate</h2>
+  <div class="table-scroll">
   <table class="lb-table">
     <tr>
       <th></th>
@@ -116,6 +222,7 @@
     </tr>
     {% endfor %}
   </table>
+  </div>
 </div>
 
 {# ---- Charts ---- #}
@@ -132,7 +239,8 @@
 
 {# ---- Per-task results ---- #}
 <div class="results">
-  <h2>Per-Task Results</h2>
+  <h2>Per-Task Results <span style="font-size:0.7rem;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;">— click a cell for details</span></h2>
+  <div class="table-scroll">
   <table class="res-table">
     <tr>
       <th>Policy</th>
@@ -158,9 +266,14 @@
           {% set rate = r.pass_rate | default(1.0 if r.success else 0.0) %}
           {% if n_runs > 1 and rate > 0 and rate < 1 %}
             {%- set n_pass = (rate * n_runs) | round | int -%}
-            <td class="{% if r.success %}pass{% else %}fail{% endif %}" title="passed {{ n_pass }} of {{ n_runs }} runs">{{ "PASS" if r.success else "FAIL" }} <span style="font-size:0.7rem; color:var(--muted);">({{ n_pass }}/{{ n_runs }})</span></td>
+            <td class="{% if r.success %}pass{% else %}fail{% endif %} clickable"
+                data-tool="{{ tool }}" data-policy="{{ pid }}"
+                onclick="openModal('{{ tool }}', '{{ pid }}')"
+                title="passed {{ n_pass }} of {{ n_runs }} runs">{{ "PASS" if r.success else "FAIL" }} <span style="font-size:0.7rem; color:var(--muted);">({{ n_pass }}/{{ n_runs }})</span></td>
           {% else %}
-            <td class="{% if r.success %}pass{% else %}fail{% endif %}">{{ "PASS" if r.success else "FAIL" }}</td>
+            <td class="{% if r.success %}pass{% else %}fail{% endif %} clickable"
+                data-tool="{{ tool }}" data-policy="{{ pid }}"
+                onclick="openModal('{{ tool }}', '{{ pid }}')">{{ "PASS" if r.success else "FAIL" }}</td>
           {% endif %}
         {% else %}
           <td style="color:var(--muted);">—</td>
@@ -169,17 +282,177 @@
     </tr>
     {% endfor %}
   </table>
+  </div>
 </div>
 
+{# ---- Modal ---- #}
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">—</h3>
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <span class="modal-badge" id="modalBadge">—</span>
+        <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="metrics-bar" id="modalMetrics"></div>
+      <div class="pipeline" id="modalPipeline"></div>
+      <div id="modalSections"></div>
+    </div>
+  </div>
+</div>
+
+<footer class="footer">
+  <p>&copy; {{ agg.generated_at[:4] }} <a href="https://nirmata.com">Nirmata</a> &middot; <a href="https://github.com/nirmata/policy-bench">policy-bench</a></p>
+</footer>
+
 <script>
-const chartColors = { nctl: '#6ea8fe', claude: '#f87171', cursor: '#4ade80' };
+/* ---- Embed result data for modal lookups ---- */
+const resultData = {{ agg.results | tojson }};
+
+/* Build lookup: resultMap["tool::policy_id"] = result */
+const resultMap = {};
+resultData.forEach(r => { resultMap[r.tool + '::' + r.policy_id] = r; });
+
+/* ---- Modal logic ---- */
+function openModal(tool, policyId) {
+  const r = resultMap[tool + '::' + policyId];
+  if (!r) return;
+
+  /* Title */
+  document.getElementById('modalTitle').textContent = tool + ' / ' + policyId;
+
+  /* Badge */
+  const badge = document.getElementById('modalBadge');
+  badge.textContent = r.success ? 'PASS' : 'FAIL';
+  badge.className = 'modal-badge ' + (r.success ? 'pass-badge' : 'fail-badge');
+
+  /* Metrics bar */
+  const metrics = [];
+  if (r.difficulty) metrics.push({ label: 'Difficulty', value: r.difficulty });
+  if (r.task_type) metrics.push({ label: 'Task Type', value: r.task_type });
+  if (r.expected_output_kind) metrics.push({ label: 'Expected Kind', value: r.expected_output_kind });
+  if (r.conversion_time_seconds != null) metrics.push({ label: 'Time', value: r.conversion_time_seconds.toFixed(1) + 's' });
+  if (r.cost_usd != null) metrics.push({ label: 'Cost', value: '$' + r.cost_usd.toFixed(4) });
+  if (r.total_tokens != null) metrics.push({ label: 'Tokens', value: r.total_tokens.toLocaleString() });
+  if (r.model) metrics.push({ label: 'Model', value: r.model });
+
+  document.getElementById('modalMetrics').innerHTML = metrics.map(m =>
+    '<div class="metric-chip"><span class="mc-label">' + esc(m.label) + '</span><span class="mc-value">' + esc(m.value) + '</span></div>'
+  ).join('');
+
+  /* Pipeline */
+  const steps = [];
+  if (r.schema_pass !== undefined) {
+    steps.push({ label: 'Schema + CEL', status: r.schema_pass ? 'pass' : 'fail' });
+  }
+  if (r.lint_pass !== undefined) {
+    const warns = (r.lint_warnings || []).length;
+    steps.push({ label: 'Lint' + (warns ? ' (' + warns + ' warn)' : ''), status: r.lint_pass ? 'pass' : 'fail' });
+  }
+  if (r.semantic_skipped) {
+    steps.push({ label: 'Functional', status: 'skip' });
+  } else if (r.semantic_pass !== undefined) {
+    steps.push({ label: 'Functional', status: r.semantic_pass ? 'pass' : 'fail' });
+  }
+  const icons = { pass: '\u2713', fail: '\u2717', skip: '\u2014' };
+  document.getElementById('modalPipeline').innerHTML = steps.map(s =>
+    '<span class="pipe-step pipe-' + s.status + '"><span class="pipe-icon">' + icons[s.status] + '</span> ' + esc(s.label) + '</span>'
+  ).join('');
+
+  /* Collapsible sections */
+  const sections = [];
+
+  if (r.description) {
+    sections.push({ title: 'Task Description', content: '<div class="code-block"><pre>' + esc(r.description) + '</pre></div>' });
+  }
+
+  if (r.prompt) {
+    sections.push({ title: 'Prompt', content: '<div class="code-block"><pre>' + esc(r.prompt) + '</pre></div>' });
+  }
+
+  if (r.input_snippet) {
+    sections.push({ title: 'Input Policy', content: '<div class="code-block"><pre>' + esc(r.input_snippet) + '</pre></div>' });
+  }
+
+  if (r.output_yaml) {
+    sections.push({ title: 'Generated Output', content: '<div class="code-block"><pre>' + esc(r.output_yaml) + '</pre></div>' });
+  } else if (r.yaml_preview) {
+    sections.push({ title: 'Output Preview (first 25 lines)', content: '<div class="code-block"><pre>' + esc(r.yaml_preview) + '</pre></div>' });
+  }
+
+  /* Errors */
+  const allErrors = [].concat(
+    r.error ? [r.error] : [],
+    r.expected_kind_errors || [],
+    r.schema_errors || [],
+    r.semantic_errors || [],
+  );
+  if (allErrors.length) {
+    sections.push({
+      title: 'Errors (' + allErrors.length + ')',
+      content: '<ul class="error-list">' + allErrors.map(e => '<li>' + esc(e) + '</li>').join('') + '</ul>',
+    });
+  }
+
+  /* Lint warnings */
+  if (r.lint_warnings && r.lint_warnings.length) {
+    sections.push({
+      title: 'Lint Warnings (' + r.lint_warnings.length + ')',
+      content: '<ul class="error-list">' + r.lint_warnings.map(w => '<li style="border-left-color:var(--orange);color:var(--orange);">' + esc(w) + '</li>').join('') + '</ul>',
+    });
+  }
+
+  if (r.raw_log) {
+    sections.push({ title: 'Execution Log', content: '<div class="code-block"><pre>' + esc(r.raw_log) + '</pre></div>' });
+  }
+
+  document.getElementById('modalSections').innerHTML = sections.map((s, i) =>
+    '<button class="section-toggle" onclick="toggleSection(this)">' + esc(s.title) + ' <span class="arrow">&#9654;</span></button>' +
+    '<div class="section-content">' + s.content + '</div>'
+  ).join('');
+
+  /* Auto-expand first section */
+  const firstToggle = document.querySelector('.section-toggle');
+  if (firstToggle) toggleSection(firstToggle);
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function toggleSection(btn) {
+  const content = btn.nextElementSibling;
+  const isOpen = content.classList.contains('open');
+  content.classList.toggle('open');
+  btn.classList.toggle('expanded');
+}
+
+/* Escape HTML */
+function esc(str) {
+  if (str == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(str);
+  return d.innerHTML;
+}
+
+/* Close on Escape key */
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* ---- Charts ---- */
+const chartColors = { nctl: '#71CFEB', claude: '#F3782C', cursor: '#459666' };
 const tools = {{ leaderboard | map(attribute='tool') | list | tojson }};
 const passRates = {{ leaderboard | map(attribute='pass_rate') | list | tojson }}.map(x => x * 100);
 const costs = {{ leaderboard | map(attribute='avg_cost') | list | tojson }}.map(x => x || 0);
-const bgColors = tools.map(t => chartColors[t] || '#a78bfa');
+const bgColors = tools.map(t => chartColors[t] || '#2E5596');
 
-const gridColor = '#1e2530';
-const tickColor = '#71717a';
+const gridColor = '#1e345d';
+const tickColor = '#A7B0BA';
 const scaleOpts = { grid: { color: gridColor }, ticks: { color: tickColor } };
 
 // Pass rate bar chart

@@ -269,6 +269,24 @@ def _run_single(
             except OSError:
                 pass
 
+        # Capture input snippet (first 100 lines of source policy)
+        input_snippet = None
+        if input_path and input_path.is_file():
+            try:
+                with input_path.open(encoding="utf-8", errors="replace") as fh:
+                    input_snippet = "".join(itertools.islice(fh, 100))
+            except OSError:
+                pass
+
+        # Capture generated output YAML
+        output_yaml = None
+        if output_path.exists():
+            try:
+                raw = output_path.read_text(encoding="utf-8", errors="replace")
+                output_yaml = raw[:10_000]
+            except OSError:
+                pass
+
         timestamp_str = datetime.now(timezone.utc).isoformat()
         last_result = {
             "run_id": f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}_{tool_name}_{policy_id}",
@@ -278,6 +296,8 @@ def _run_single(
             "task_type": task_type,
             "difficulty": policy.get("difficulty"),
             "expected_output_kind": expected_kind,
+            "description": policy.get("description"),
+            "prompt": prompt,
             "timestamp": timestamp_str,
             "success": success,
             "conversion_time_seconds": run_result.conversion_time_seconds,
@@ -294,6 +314,8 @@ def _run_single(
             **eval_result,
             "error": run_result.error if not run_result.success else None,
             "yaml_preview": yaml_preview,
+            "input_snippet": input_snippet,
+            "output_yaml": output_yaml,
             "raw_log": run_result.raw_log,
         }
 
