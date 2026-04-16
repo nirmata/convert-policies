@@ -75,6 +75,13 @@ _GENERATION_PROMPT = (
 )
 
 
+_REFERENCE_CLAUSE = (
+    "\n\nReference conversion examples are in {reference_dir} — "
+    "each subdirectory has a before.yaml (old ClusterPolicy) and after.yaml "
+    "(converted policy). Study these examples before converting."
+)
+
+
 def build_prompt(
     track: str,
     input_path: str | None,
@@ -83,18 +90,25 @@ def build_prompt(
     output_kind: str | None = None,
     task_type: str = "convert",
     description: str | None = None,
+    reference_dir: str | None = None,
 ) -> str:
     """Return a formatted prompt for the given track/task.
 
     For *convert* tasks, looks up the template by (track, output_kind).
     For *generate* tasks, uses the generation template with *description*.
+
+    When *reference_dir* is provided, appends a clause pointing the tool
+    at before/after conversion examples.
     """
     if task_type == "generate":
-        return _GENERATION_PROMPT.format(
+        prompt = _GENERATION_PROMPT.format(
             output_kind=output_kind or "ValidatingPolicy",
             description=description or "enforces the desired policy.",
             output_path=output_path,
         )
+        if reference_dir:
+            prompt += _REFERENCE_CLAUSE.format(reference_dir=reference_dir)
+        return prompt
 
     # Conversion: try (track, output_kind) first, fall back to (track, None)
     template = _CONVERSION_PROMPTS.get((track, output_kind))
@@ -109,8 +123,13 @@ def build_prompt(
     if description:
         description_clause = f" The policy {description}."
 
-    return template.format(
+    prompt = template.format(
         input_path=input_path,
         output_path=output_path,
         description_clause=description_clause,
     )
+
+    if reference_dir:
+        prompt += _REFERENCE_CLAUSE.format(reference_dir=reference_dir)
+
+    return prompt
