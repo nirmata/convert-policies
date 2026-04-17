@@ -68,6 +68,7 @@ def _get_runner(
     *,
     tool_script: str | None = None,
     containerized: bool = False,
+    persistent: bool = False,
 ) -> ToolRunner:
     """Resolve the runner for a tool.
 
@@ -79,7 +80,7 @@ def _get_runner(
     """
     if containerized:
         from runners.container_runner import ContainerRunner
-        return ContainerRunner(tool_name)
+        return ContainerRunner(tool_name, persistent=persistent)
 
     from runners.script_runner import ScriptRunner
 
@@ -121,10 +122,13 @@ def _run_single(
     eval_config: dict | None = None,
     tool_script: str | None = None,
     containerized: bool = False,
+    persistent: bool = False,
+    runner: ToolRunner | None = None,
 ) -> dict:
     """Run one (tool, policy) pair and return the results dict."""
     eval_config = eval_config or {}
-    runner = _get_runner(tool_name, tool_script=tool_script, containerized=containerized)
+    if runner is None:
+        runner = _get_runner(tool_name, tool_script=tool_script, containerized=containerized, persistent=persistent)
 
     if not runner.is_available():
         return {
@@ -184,6 +188,11 @@ def _run_single(
     last_result: dict = {}
     base_prompt: str | None = None
 
+    # nctl has its own conversion skills; other tools get
+    # reference examples from the reference/ directory.
+    ref_dir = REPO_ROOT / "reference"
+    use_reference = ref_dir.is_dir() and tool_name != "nctl"
+
     for attempt in range(1, max_attempts + 1):
         # Per-task prompt override takes precedence over template
         if policy.get("prompt"):
@@ -199,6 +208,7 @@ def _run_single(
                 output_kind=expected_kind,
                 task_type=task_type,
                 description=policy.get("description"),
+                reference_dir=str(ref_dir) if use_reference else None,
             )
 
         # Save base prompt on first attempt; reset on each retry
@@ -436,8 +446,13 @@ def main() -> int:
     parser.add_argument("--tool-script", help="Path to tool runner script (overrides auto-detection from --tool)")
     parser.add_argument("--skip-kyverno-test", action="store_true")
     parser.add_argument("--containerized", action="store_true", help="Run tools in isolated Docker containers (no config/memory/skills leak)")
+    parser.add_argument("--persistent", action="store_true", help="Reuse one container per tool across tasks (implies --containerized). Lets the agent accumulate context between conversions.")
     parser.add_argument("--report", action="store_true", help="Generate report from existing results (no runs)")
     args = parser.parse_args()
+
+    # --persistent implies --containerized
+    if args.persistent:
+        args.containerized = True
 
     config = _load_config()
     policies = _load_dataset()
@@ -482,30 +497,9 @@ def main() -> int:
     results_dir = REPO_ROOT / "results"
     output_base = REPO_ROOT / "output"
 
-    # Archive the prior run to /tmp before wiping, so data isn't lost when a
-    # new run immediately follows (e.g. one tool today, then another). The
-    # archive is keyed by the prior run's end time so the directory name
-    # sorts chronologically. Cleanup of /tmp/policy-bench is left to the OS.
-    if results_dir.is_dir() and any(results_dir.iterdir()):
-        archive_root = Path("/tmp/policy-bench/runs")
-        archive_root.mkdir(parents=True, exist_ok=True)
-        archive_dir = archive_root / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ_prewipe")
-        shutil.copytree(results_dir, archive_dir)
-        output_archive = archive_dir / "output"
-        for tool_name in tools_to_run:
-            tool_out = output_base / tool_name
-            if tool_out.is_dir():
-                shutil.copytree(tool_out, output_archive / tool_name)
-        print(f"Archived prior results to {archive_dir}", file=sys.stderr)
-
-    # Clean previous run artifacts so each run starts fresh.
-    shutil.rmtree(results_dir, ignore_errors=True)
-    for tool_name in tools_to_run:
-        tool_out = output_base / tool_name
-        if tool_out.is_dir():
-            shutil.rmtree(tool_out)
-
-    results_dir.mkdir(parents=True)
+    # All result files are timestamped, so consecutive runs never collide.
+    # No wipe needed — results accumulate safely.
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     all_results: list[dict] = []
 
@@ -515,10 +509,19 @@ def main() -> int:
         """Run all jobs for a single tool. Returns (results, log_lines)."""
         tcfg = tool_configs.get(tool_name, {})
         workers_label = f", {num_workers} workers" if num_workers > 1 else ""
+        mode_label = " (persistent)" if args.persistent else ""
         # Print the header live so it appears before the container_runner's
         # tee'd output, not buffered with the per-policy status lines.
-        print(f"\n--- Running {tool_name}{workers_label} ---", flush=True)
+        print(f"\n--- Running {tool_name}{workers_label}{mode_label} ---", flush=True)
         lines: list[str] = []
+
+        # In persistent mode, create ONE container for the entire tool run.
+        # The runner is shared across all tasks so the agent accumulates context.
+        shared_runner: ToolRunner | None = None
+        if args.persistent:
+            from runners.container_runner import ContainerRunner
+            shared_runner = ContainerRunner(tool_name, persistent=True)
+            shared_runner.setup(tcfg)
 
         def _execute_job(policy: dict) -> dict:
             return _run_single(
@@ -529,6 +532,8 @@ def main() -> int:
                 eval_config=eval_config,
                 tool_script=args.tool_script,
                 containerized=args.containerized,
+                persistent=args.persistent,
+                runner=shared_runner,
             )
 
         tool_results: list[dict] = []
@@ -584,6 +589,10 @@ def main() -> int:
                     run_id = result.get("run_id", f"run_{tool_name}_{policy['id']}")
                     out_json = results_dir / f"{run_id}.json"
                     out_json.write_text(json.dumps(result, indent=2), encoding="utf-8")
+
+        # Tear down persistent container after all tasks complete
+        if shared_runner is not None:
+            shared_runner.teardown()
 
         return tool_results, lines
 
