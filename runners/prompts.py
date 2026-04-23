@@ -9,48 +9,50 @@ Two categories:
 
 from __future__ import annotations
 
+KYVERNO_VERSION = "1.17+"
+
 # ---------------------------------------------------------------------------
 # Conversion prompts (source → target)
 # ---------------------------------------------------------------------------
 
 _CONVERSION_PROMPTS: dict[tuple[str, str | None], str] = {
     ("cluster-policy", "ValidatingPolicy"): (
-        "Convert the Kyverno ClusterPolicy in {input_path} to a Kyverno 1.16+ "
+        "Convert the Kyverno ClusterPolicy in {input_path} to a Kyverno {kyverno_version} "
         "ValidatingPolicy (apiVersion: policies.kyverno.io/v1)."
         "{description_clause} Write the converted policy to {output_path}."
     ),
     ("cluster-policy", "MutatingPolicy"): (
-        "Convert the Kyverno ClusterPolicy in {input_path} to a Kyverno 1.16+ "
+        "Convert the Kyverno ClusterPolicy in {input_path} to a Kyverno {kyverno_version} "
         "MutatingPolicy (apiVersion: policies.kyverno.io/v1)."
         "{description_clause} Write the converted policy to {output_path}."
     ),
     ("cluster-policy", "GeneratingPolicy"): (
-        "Convert the Kyverno ClusterPolicy in {input_path} to a Kyverno 1.16+ "
+        "Convert the Kyverno ClusterPolicy in {input_path} to a Kyverno {kyverno_version} "
         "GeneratingPolicy (apiVersion: policies.kyverno.io/v1)."
         "{description_clause} Write the converted policy to {output_path}."
     ),
     ("cluster-policy", "ImageValidatingPolicy"): (
-        "Convert the Kyverno ClusterPolicy in {input_path} to a Kyverno 1.16+ "
+        "Convert the Kyverno ClusterPolicy in {input_path} to a Kyverno {kyverno_version} "
         "ImageValidatingPolicy (apiVersion: policies.kyverno.io/v1)."
         "{description_clause} Write the converted policy to {output_path}."
     ),
     ("gatekeeper", None): (
-        "Convert the Gatekeeper policy in {input_path} to a Kyverno 1.16+ "
+        "Convert the Gatekeeper policy in {input_path} to a Kyverno {kyverno_version} "
         "ValidatingPolicy (apiVersion: policies.kyverno.io/v1)."
         "{description_clause} Write the converted policy to {output_path}."
     ),
     ("opa", None): (
-        "Convert the OPA/Rego policy in {input_path} to a Kyverno 1.16+ "
+        "Convert the OPA/Rego policy in {input_path} to a Kyverno {kyverno_version} "
         "ValidatingPolicy (apiVersion: policies.kyverno.io/v1)."
         "{description_clause} Write the converted policy to {output_path}."
     ),
     ("sentinel", None): (
-        "Convert the HashiCorp Sentinel policy in {input_path} to a Kyverno 1.16+ "
+        "Convert the HashiCorp Sentinel policy in {input_path} to a Kyverno {kyverno_version} "
         "ValidatingPolicy (apiVersion: policies.kyverno.io/v1)."
         "{description_clause} Write the converted policy to {output_path}."
     ),
     ("cleanup", None): (
-        "Convert the Kyverno CleanupPolicy in {input_path} to a Kyverno 1.16+ "
+        "Convert the Kyverno CleanupPolicy in {input_path} to a Kyverno {kyverno_version} "
         "DeletingPolicy (apiVersion: policies.kyverno.io/v1)."
         "{description_clause} Write the converted policy to {output_path}."
     ),
@@ -70,13 +72,13 @@ PROMPTS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 _GENERATION_PROMPT = (
-    "Write a Kyverno 1.16+ {output_kind} (apiVersion: policies.kyverno.io/v1) "
+    "Write a Kyverno {kyverno_version} {output_kind} (apiVersion: policies.kyverno.io/v1) "
     "that {description} Write the policy to {output_path}."
 )
 
 
 _DOCS_CLAUSE = (
-    "\n\nLook up Kyverno 1.16+ documentation and examples before writing the policy:"
+    f"\n\nLook up Kyverno {KYVERNO_VERSION} documentation and examples before writing the policy:"
     "\n- https://kyverno.io/docs/"
     "\n- https://github.com/kyverno/kyverno-policies"
 )
@@ -102,6 +104,7 @@ def build_prompt(
     """
     if task_type == "generate":
         prompt = _GENERATION_PROMPT.format(
+            kyverno_version=KYVERNO_VERSION,
             output_kind=output_kind or "ValidatingPolicy",
             description=description or "enforces the desired policy.",
             output_path=output_path,
@@ -124,6 +127,7 @@ def build_prompt(
         description_clause = f" The policy {description}."
 
     prompt = template.format(
+        kyverno_version=KYVERNO_VERSION,
         input_path=input_path,
         output_path=output_path,
         description_clause=description_clause,

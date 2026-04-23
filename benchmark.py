@@ -189,7 +189,7 @@ def _run_single(
     base_prompt: str | None = None
 
     # nctl has its own conversion skills; other tools get
-    # doc links to look up Kyverno 1.16+ schema and examples.
+    # doc links to look up Kyverno 1.17+ schema and examples.
     include_docs = tool_name != "nctl"
 
     for attempt in range(1, max_attempts + 1):
