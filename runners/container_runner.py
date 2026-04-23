@@ -91,6 +91,23 @@ _REQUIRED_ENV_BY_TOOL = {
     "codex": ["CODEX_API_KEY"],
 }
 
+# Upstream-network failures we retry automatically in persistent mode.
+# These are all Go-net / HTTP-client error texts; we match substrings so they
+# hit even when wrapped in outer error messages (e.g. nctl's
+# "failed to run conversation: Post \"...\": unexpected EOF").
+_TRANSIENT_ERROR_PATTERNS = (
+    "unexpected EOF",
+    "connection reset",
+    "i/o timeout",
+    "context deadline exceeded",
+)
+_MAX_TRANSIENT_ATTEMPTS = 3  # 1 initial + up to 2 retries
+_TRANSIENT_RETRY_SLEEP = 10  # seconds between retries
+
+
+def _is_transient_error(text: str) -> bool:
+    return any(p in text for p in _TRANSIENT_ERROR_PATTERNS)
+
 
 class ContainerRunner(ToolRunner):
     """Run a benchmark tool inside an isolated Docker container.
@@ -263,44 +280,99 @@ class ContainerRunner(ToolRunner):
         stderr_buf: list[str] = []
 
         start = time.monotonic()
+        exec_proc = None
         try:
-            exec_proc = subprocess.Popen(
-                ["docker", "exec", cid, entrypoint, container_prompt],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-            )
-            t_out = threading.Thread(
-                target=_tee_stream,
-                args=(exec_proc.stdout, stdout_buf, sys.stdout, label),
-                daemon=True,
-            )
-            t_err = threading.Thread(
-                target=_tee_stream,
-                args=(exec_proc.stderr, stderr_buf, sys.stderr, label),
-                daemon=True,
-            )
-            t_out.start()
-            t_err.start()
+            # Retry loop for transient upstream failures (e.g. nctl's Nirmata
+            # LLM proxy closing the connection mid-response with "unexpected
+            # EOF"). Non-transient exits break out immediately so we don't
+            # waste attempts on real conversion errors.
+            for attempt in range(1, _MAX_TRANSIENT_ATTEMPTS + 1):
+                per_stdout: list[str] = []
+                per_stderr: list[str] = []
 
-            try:
-                exec_proc.wait(timeout=timeout_seconds)
-            except subprocess.TimeoutExpired:
-                exec_proc.kill()
-                exec_proc.wait()
+                exec_proc = subprocess.Popen(
+                    ["docker", "exec", cid, entrypoint, container_prompt],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
+                t_out = threading.Thread(
+                    target=_tee_stream,
+                    args=(exec_proc.stdout, per_stdout, sys.stdout, label),
+                    daemon=True,
+                )
+                t_err = threading.Thread(
+                    target=_tee_stream,
+                    args=(exec_proc.stderr, per_stderr, sys.stderr, label),
+                    daemon=True,
+                )
+                t_out.start()
+                t_err.start()
+
+                try:
+                    exec_proc.wait(timeout=timeout_seconds)
+                except subprocess.TimeoutExpired:
+                    exec_proc.kill()
+                    exec_proc.wait()
+                    t_out.join(timeout=2)
+                    t_err.join(timeout=2)
+                    stdout_buf.extend(per_stdout)
+                    stderr_buf.extend(per_stderr)
+                    return RunResult(
+                        output_path=output_path,
+                        conversion_time_seconds=time.monotonic() - start,
+                        success=False,
+                        error=f"Task timed out after {timeout_seconds}s",
+                        model=f"{self.name}-container",
+                    )
+
                 t_out.join(timeout=2)
                 t_err.join(timeout=2)
-                return RunResult(
-                    output_path=output_path,
-                    conversion_time_seconds=time.monotonic() - start,
-                    success=False,
-                    error=f"Task timed out after {timeout_seconds}s",
-                    model=f"{self.name}-container",
-                )
 
-            t_out.join(timeout=2)
-            t_err.join(timeout=2)
+                stdout_buf.extend(per_stdout)
+                stderr_buf.extend(per_stderr)
+
+                if exec_proc.returncode == 0:
+                    break
+
+                per_combined = "".join(per_stdout) + "\n" + "".join(per_stderr)
+                if (
+                    not _is_transient_error(per_combined)
+                    or attempt >= _MAX_TRANSIENT_ATTEMPTS
+                ):
+                    break
+
+                marker = (
+                    f"\n[harness] transient upstream error detected "
+                    f"(attempt {attempt}/{_MAX_TRANSIENT_ATTEMPTS}), "
+                    f"retrying in {_TRANSIENT_RETRY_SLEEP}s...\n"
+                )
+                with _STREAM_LOCK:
+                    try:
+                        sys.stderr.write(label + marker)
+                        sys.stderr.flush()
+                    except (OSError, ValueError):
+                        pass
+                stderr_buf.append(marker)
+
+                time.sleep(_TRANSIENT_RETRY_SLEEP)
+
+                # Reset workspace + re-copy input so the next attempt starts
+                # from a clean slate (the previous attempt may have written a
+                # partial output file before the connection dropped).
+                subprocess.run(
+                    ["docker", "exec", cid, "sh", "-c",
+                     f"rm -f {_CONTAINER_INPUT} && rm -rf {_CONTAINER_OUTPUT_DIR} "
+                     f"&& mkdir -p {_CONTAINER_OUTPUT_DIR}"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if not is_generate:
+                    subprocess.run(
+                        ["docker", "cp", str(input_path), f"{cid}:{_CONTAINER_INPUT}"],
+                        capture_output=True, text=True, timeout=30,
+                    )
+
             elapsed = time.monotonic() - start
 
         except Exception as exc:
