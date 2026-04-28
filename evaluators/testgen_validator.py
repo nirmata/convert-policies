@@ -117,7 +117,8 @@ def evaluate_testgen(
         schema_pass = False
 
     try:
-        yaml.safe_load(resources_path.read_text(encoding="utf-8"))
+        # resources.yaml typically contains multiple documents separated by ---
+        list(yaml.safe_load_all(resources_path.read_text(encoding="utf-8")))
     except Exception as exc:
         errors.append(f"Failed to parse resources.yaml: {exc}")
         schema_pass = False
