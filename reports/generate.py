@@ -66,15 +66,15 @@ def _load_results(include_files: list[str] | None = None) -> list[dict]:
 
 
 def _deduplicate_runs(results: list[dict]) -> list[dict]:
-    """If multiple runs exist for the same (tool, policy_id), keep the best one.
+    """If multiple runs exist for the same (tool, policy_id, task_type), keep the best one.
 
     Prefers records that carry a ``runs`` array (multi-run aggregated data)
     over plain single-run records.  Among candidates of the same kind, the
     latest by ``timestamp`` wins.
     """
-    groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    groups: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
     for r in results:
-        key = (r.get("tool", ""), r.get("policy_id", ""))
+        key = (r.get("tool", ""), r.get("policy_id", ""), r.get("task_type", "convert"))
         groups[key].append(r)
 
     def _best(runs: list[dict]) -> dict:
