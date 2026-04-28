@@ -345,7 +345,7 @@ def _compute_testgen_leaderboard(testgen_results: list[dict]) -> list[dict]:
     for tool, items in sorted(by_tool.items()):
         total = len(items)
         composite_pass = sum(1 for i in items if i.get("testgen_composite_pass"))
-        coverage_scores = [i["testgen_coverage_score"] for i in items if i.get("testgen_coverage_score") is not None]
+        coverage_scores = [i["testgen_coverage_score"] for i in items if i.get("testgen_oracle_tuples", 0) > 0]
         has_pf = sum(1 for i in items if i.get("testgen_has_pass_and_fail"))
         times = [i["conversion_time_seconds"] for i in items if i.get("conversion_time_seconds")]
         costs = [i["cost_usd"] for i in items if i.get("cost_usd") is not None]

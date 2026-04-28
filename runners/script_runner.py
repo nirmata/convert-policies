@@ -31,6 +31,7 @@ from pathlib import Path
 from .base import (
     RunResult,
     ToolRunner,
+    dir_output_artifact,
     estimate_cost,
     estimate_tokens,
 )
@@ -57,9 +58,10 @@ class ScriptRunner(ToolRunner):
     ) -> RunResult:
         repo_root = Path(__file__).resolve().parent.parent
 
-        # output_path is a pre-created directory for generate_test tasks.
-        # Detect this before touching the filesystem.
-        is_dir_output = output_path.is_dir()
+        # dir_output_artifact returns a path if output_path is a pre-created
+        # directory (generate_test tasks), None for single-file tasks.
+        output_check = dir_output_artifact(output_path)
+        is_dir_output = output_check is not None
         if not is_dir_output:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -89,10 +91,7 @@ class ScriptRunner(ToolRunner):
             )
 
         log = (proc.stdout or "") + "\n" + (proc.stderr or "")
-
-        # For directory output, the directory itself is pre-created; check the
-        # canonical artifact to confirm the tool actually produced something.
-        output_check = (output_path / "kyverno-test.yaml") if is_dir_output else output_path
+        output_check = output_check or output_path
         success = proc.returncode == 0 and output_check.exists()
 
         # Read optional sidecar metadata

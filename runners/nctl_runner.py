@@ -19,6 +19,7 @@ from pathlib import Path
 from .base import (
     RunResult,
     ToolRunner,
+    dir_output_artifact,
     estimate_cost,
     estimate_tokens,
 )
@@ -69,8 +70,8 @@ class NctlRunner(ToolRunner):
 
         repo_root = Path(__file__).resolve().parent.parent
         version = self._get_version()
-        is_dir_output = output_path.is_dir()
-        if not is_dir_output:
+        output_check = dir_output_artifact(output_path)
+        if output_check is None:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
         cmd = [
@@ -102,7 +103,7 @@ class NctlRunner(ToolRunner):
             )
 
         log = (proc.stdout or "") + "\n" + (proc.stderr or "")
-        output_check = (output_path / "kyverno-test.yaml") if is_dir_output else output_path
+        output_check = output_check or output_path
         success = (
             proc.returncode == 0
             and output_check.exists()

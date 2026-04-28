@@ -31,7 +31,7 @@ def _count_tuples(results: list[dict]) -> int:
     """Count individual (resource_name, result) pairs across all result entries."""
     total = 0
     for entry in results:
-        resources = entry.get("resources") or []
+        resources = entry.get("resources")
         total += len(resources) if resources else 1
     return total
 
