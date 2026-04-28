@@ -128,11 +128,11 @@ def _aggregate(results: list[dict]) -> dict:
     by_output_kind: dict[str, list[dict]] = defaultdict(list)
     by_task_type: dict[str, list[dict]] = defaultdict(list)
     for r in results:
-        by_tool[r.get("tool", "unknown")].append(r)
-        by_track[r.get("track", "unknown")].append(r)
-        by_difficulty[r.get("difficulty", "unknown")].append(r)
-        by_output_kind[r.get("expected_output_kind", "unknown")].append(r)
-        by_task_type[r.get("task_type", "convert")].append(r)
+        by_tool[r.get("tool") or "unknown"].append(r)
+        by_track[r.get("track") or "unknown"].append(r)
+        by_difficulty[r.get("difficulty") or "unknown"].append(r)
+        by_output_kind[r.get("expected_output_kind") or "unknown"].append(r)
+        by_task_type[r.get("task_type") or "convert"].append(r)
 
     def _stats(items: list[dict]) -> dict:
         total = len(items)
