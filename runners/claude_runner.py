@@ -21,6 +21,7 @@ from pathlib import Path
 from .base import (
     RunResult,
     ToolRunner,
+    dir_output_artifact,
     extract_yaml_block,
     model_cost,
     run_cli_subprocess,
@@ -55,22 +56,20 @@ class ClaudeRunner(ToolRunner):
         prompt: str,
         timeout_seconds: int,
     ) -> RunResult:
-        is_dir_output = output_path.is_dir()
+        output_check_path = dir_output_artifact(output_path)
 
-        if is_dir_output:
+        if output_check_path is not None:
             full_prompt = (
                 f"{prompt}\n\n"
                 f"The policy file is already at: {output_path / 'policy.yaml'}\n"
                 f"Write kyverno-test.yaml and resources.yaml to: {output_path}"
             )
-            output_check_path: Path | None = output_path / "kyverno-test.yaml"
         else:
             full_prompt = (
                 f"{prompt}\n\n"
                 f"The source policy file is at: {input_path}\n"
                 f"Write the converted policy to: {output_path}"
             )
-            output_check_path = None
 
         cmd = [
             "claude",

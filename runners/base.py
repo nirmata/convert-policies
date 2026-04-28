@@ -62,6 +62,20 @@ def extract_yaml_block(text: str) -> str | None:
     return None
 
 
+def dir_output_artifact(output_path: Path) -> Path | None:
+    """Return the canonical artifact for directory-output tasks, or None.
+
+    For generate_test tasks, benchmark.py pre-creates ``output_path`` as a
+    directory containing ``policy.yaml``.  The AI should write
+    ``kyverno-test.yaml`` and ``resources.yaml`` there.  Checking
+    ``output_path.exists()`` is always True; callers need the specific file.
+
+    Returns ``None`` for single-file (convert/generate) tasks so callers can
+    use the compact pattern: ``output_check = dir_output_artifact(p) or p``.
+    """
+    return (output_path / "kyverno-test.yaml") if output_path.is_dir() else None
+
+
 # -----------------------------------------------------------------------
 # Centralized model pricing (USD per 1M tokens: input, output)
 # -----------------------------------------------------------------------
@@ -207,15 +221,12 @@ def run_cli_subprocess(
     except (_json.JSONDecodeError, TypeError):
         pass
 
-    # For directory-output tasks the harness pre-creates output_path, so
-    # output_path.exists() is vacuously True.  Use output_check_path (the
-    # canonical artifact inside the directory) for the real existence test.
-    _check = output_check_path if output_check_path is not None else output_path
+    artifact = output_check_path if output_check_path is not None else output_path
 
     # -- Determine success / YAML fallback ---------------------------------
-    success = proc.returncode == 0 and _check.exists()
+    success = proc.returncode == 0 and artifact.exists()
 
-    if proc.returncode == 0 and not _check.exists() and output_check_path is None:
+    if proc.returncode == 0 and not artifact.exists() and output_check_path is None:
         # YAML extraction only applies to single-file (convert/generate) output.
         yaml_text = extract_yaml_block(raw_text)
         if yaml_text:
@@ -231,9 +242,9 @@ def run_cli_subprocess(
         output_tokens = real_output_tokens
     else:
         out_text = ""
-        if _check.is_file():
+        if artifact.is_file():
             try:
-                out_text = _check.read_text(encoding="utf-8")
+                out_text = artifact.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:
                 print(f"  Warning: could not read output file: {exc}", file=sys.stderr)
         output_tokens = estimate_tokens(out_text)
@@ -257,7 +268,7 @@ def run_cli_subprocess(
         error=None if success else (
             f"{cmd[0]} CLI exited {proc.returncode}"
             if proc.returncode != 0
-            else f"{cmd[0]} exited 0 but did not write output to {_check}"
+            else f"{cmd[0]} exited 0 but did not write output to {artifact}"
         ),
         model=model_name,
         tool_version=tool_version,
