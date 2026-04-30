@@ -245,17 +245,38 @@ policy-bench/
 
 All contributions and suggestions are welcome. The most impactful way to contribute is to add a new benchmark task.
 
-### What a benchmark test consists of
+### Supported source formats (tracks)
 
-Each task is defined by three things:
+Every benchmark task belongs to a **track** — the source policy format the tool is asked to read. The output is always a Kyverno 1.17+ policy type.
 
-1. **A source policy** — the input the AI tool must convert or replicate.
-2. **Test fixtures** — `kyverno-test.yaml` and `resource.yaml` that prove the converted policy actually works.
-3. **An entry in `dataset/index.yaml`** — the metadata that ties everything together.
+| Track | Source format | Supported output kinds |
+|-------|--------------|------------------------|
+| `cluster-policy` | Kyverno ClusterPolicy (v1) | ValidatingPolicy, MutatingPolicy, GeneratingPolicy, ImageValidatingPolicy |
+| `gatekeeper` | Gatekeeper ConstraintTemplate + Constraint | ValidatingPolicy |
+| `opa` | OPA/Rego | ValidatingPolicy |
+| `sentinel` | HashiCorp Sentinel | ValidatingPolicy |
+| `cleanup` | Kyverno CleanupPolicy | DeletingPolicy |
 
-### Option A: From upstream kyverno/policies (recommended)
+> **Want to add a new source format (e.g., Terraform, Pulumi, AWS SCPs)?** That requires three code changes before you can add tasks: add the track to `config.yaml`, add a prompt template to `runners/prompts.py`, and add an input validator under `evaluators/input_validators/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full walkthrough.
 
-Upstream policies come with ready-made test fixtures, so this path requires the least manual work.
+### The two task types
+
+| `task_type` | What the tool is asked to do | Requires a source policy? |
+|-------------|------------------------------|--------------------------|
+| `convert` | Translate an existing policy from one of the supported tracks into a Kyverno policy type | Yes — `path` field required |
+| `generate` | Write a new Kyverno policy from scratch based on a plain-English description | No — `description` is the entire prompt |
+
+For `generate` tasks, the `description` field in `index.yaml` is used verbatim as the prompt: `"Write a Kyverno 1.17+ ValidatingPolicy that <description>. Write the policy to output.yaml."` There is no source file.
+
+Both task types still require test fixtures to prove the output policy actually works.
+
+---
+
+### Adding a conversion task
+
+#### Option A: From upstream kyverno/policies (recommended)
+
+Upstream policies already have test fixtures, so this is the least work.
 
 **Step 1.** Add an entry to `dataset/kyverno-upstream-manifest.yaml`:
 
@@ -277,24 +298,22 @@ This writes to `dataset/imported/kyverno-policies/` and `dataset/imported/kyvern
 
 ```yaml
 - id: cp_my_new_policy
-  track: cluster-policy
+  track: cluster-policy           # cluster-policy | gatekeeper | opa | sentinel | cleanup
   task_type: convert
-  difficulty: medium
-  expected_output_kind: ValidatingPolicy
+  difficulty: medium              # easy | medium | hard
+  expected_output_kind: ValidatingPolicy   # ValidatingPolicy | MutatingPolicy | GeneratingPolicy | DeletingPolicy
   path: imported/kyverno-policies/cp_my_new_policy.yaml
   kyverno_test_dir: imported/kyverno-tests/cp_my_new_policy
   description: "what the policy enforces, in plain English"
 ```
 
-**Step 4.** Verify it runs end-to-end:
+**Step 4.** Verify:
 
 ```bash
 ./run-benchmark.sh --tool nctl --policy-id cp_my_new_policy --containerized
 ```
 
-### Option B: Custom local policy
-
-Use this when the policy doesn't exist upstream or you're writing a generation task.
+#### Option B: Custom local policy
 
 **Step 1.** Place the source policy in `input/`:
 
@@ -302,40 +321,99 @@ Use this when the policy doesn't exist upstream or you're writing a generation t
 input/my-custom-policy.yaml
 ```
 
-**Step 2.** Create test fixtures:
+**Step 2.** Create test fixtures (see [Test fixtures](#test-fixtures) below).
+
+**Step 3.** Add to `dataset/index.yaml` — set `track` to match the source format:
+
+```yaml
+# Example: Gatekeeper policy → ValidatingPolicy
+- id: gk_my_custom_policy
+  track: gatekeeper              # cluster-policy | gatekeeper | opa | sentinel | cleanup
+  task_type: convert
+  difficulty: easy
+  expected_output_kind: ValidatingPolicy
+  path: local/gk_my_custom_policy/source.yaml
+  kyverno_test_dir: local/gk_my_custom_policy
+  description: "what the policy enforces, in plain English"
+```
+
+**Step 4.** Validate and run:
+
+```bash
+python3 validate.py --input input/my-custom-policy.yaml
+./run-benchmark.sh --tool nctl --policy-id my_custom_policy --containerized
+```
+
+---
+
+### Adding a generation task
+
+Generation tasks have no source policy. The tool must write a new policy from scratch using only the `description` as a prompt.
+
+**Step 1.** Create test fixtures (see [Test fixtures](#test-fixtures) below). For generation tasks you always write these from scratch — there is no upstream policy to sync from.
+
+Place them in `dataset/local/<id>/`:
 
 ```
-dataset/local/my_custom_policy/
+dataset/local/gen_my_policy/
 ├── kyverno-test.yaml
 └── resource.yaml
 ```
 
-**`kyverno-test.yaml`** declares which resources the policy should accept and reject:
+**Step 2.** Add to `dataset/index.yaml` — note there is **no `path` field**:
+
+```yaml
+- id: gen_my_policy
+  track: cluster-policy
+  task_type: generate
+  difficulty: easy              # easy | medium | hard
+  expected_output_kind: ValidatingPolicy
+  kyverno_test_dir: local/gen_my_policy
+  description: "requires all Pods to have the label 'app' set to a non-empty value. Deny admission if the label is missing or empty."
+```
+
+The `description` is used word-for-word in the prompt sent to every tool. Write it as a precise, self-contained requirement — no references to specific files or external context.
+
+**Step 3.** Verify:
+
+```bash
+./run-benchmark.sh --tool nctl --policy-id gen_my_policy --containerized
+```
+
+---
+
+### Test fixtures
+
+Both task types require a test fixture directory with at least two files.
+
+**`kyverno-test.yaml`** — declares which resources the policy should admit and reject:
 
 ```yaml
 apiVersion: cli.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: my-custom-policy
+  name: my-policy
 policies:
-  - ../kyverno-policies/my_custom_policy.yaml
+  - ../kyverno-policies/my_policy.yaml   # path to the source policy
 resources:
   - resource.yaml
 results:
   - kind: Pod
-    policy: my-custom-policy
+    policy: my-policy
     resources: [bad-pod]
     result: fail
   - kind: Pod
-    policy: my-custom-policy
+    policy: my-policy
     resources: [good-pod]
     result: pass
 ```
 
-**`resource.yaml`** contains at least one resource that should be rejected and one that should be admitted:
+> The `results[].policy` name and `rule` fields are auto-patched by the validator to match the converted policy's `metadata.name`. You don't need to update them manually.
+
+**`resource.yaml`** — at least one resource that should be rejected and one that should be admitted:
 
 ```yaml
-# Should be rejected by the policy
+# Rejected by the policy
 apiVersion: v1
 kind: Pod
 metadata:
@@ -343,7 +421,7 @@ metadata:
 spec:
   containers: [{name: nginx, image: nginx:latest}]
 ---
-# Should be admitted by the policy
+# Admitted by the policy
 apiVersion: v1
 kind: Pod
 metadata:
@@ -354,44 +432,36 @@ spec:
   containers: [{name: nginx, image: nginx:1.27}]
 ```
 
-**Step 3.** Add to `dataset/index.yaml`:
+For MutatingPolicy tests, also add `patchedResource.yaml` with the expected post-mutation state.
 
-```yaml
-- id: my_custom_policy
-  track: cluster-policy
-  task_type: convert            # convert | generate
-  difficulty: easy              # easy | medium | hard
-  expected_output_kind: ValidatingPolicy
-  path: local/my_custom_policy/source.yaml
-  kyverno_test_dir: local/my_custom_policy
-  description: "what the policy enforces, in plain English"
-```
-
-**Step 4.** Validate the source policy and run the benchmark:
+Run a fixture manually to check it before benchmarking:
 
 ```bash
-python3 validate.py --input input/my-custom-policy.yaml
-./run-benchmark.sh --tool nctl --policy-id my_custom_policy --containerized
+kyverno test dataset/local/my_policy/
 ```
+
+---
 
 ### Naming conventions
 
 | Element | Convention | Example |
 |---------|-----------|---------|
 | Policy ID | `<track_prefix>_<snake_case>` | `cp_require_labels` |
-| Track prefix | `cp_` ClusterPolicy, `gk_` Gatekeeper, `opa_`, `sentinel_`, `cleanup_` | `cp_require_ro_rootfs` |
+| Track prefix | `cp_` ClusterPolicy, `gk_` Gatekeeper, `opa_` OPA, `sentinel_` Sentinel, `cleanup_` CleanupPolicy, `gen_` generate | `gk_container_limits` |
 | Upstream policy file | `dataset/imported/kyverno-policies/<id>.yaml` | — |
-| Custom policy file | `dataset/local/<id>/source.yaml` | — |
+| Custom source file | `dataset/local/<id>/source.yaml` | — |
 | Test fixtures | `dataset/imported/kyverno-tests/<id>/` or `dataset/local/<id>/` | — |
+
+---
 
 ### Before opening a PR
 
-- [ ] Source policy validates cleanly: `python3 validate.py --input <your-policy.yaml>`
+- [ ] For conversion tasks: source policy validates cleanly — `python3 validate.py --input <your-policy.yaml>`
 - [ ] Test fixtures include at least one pass and one fail resource
-- [ ] All required `index.yaml` fields are present: `id`, `track`, `task_type`, `difficulty`, `expected_output_kind`, `path`, `description`
-- [ ] End-to-end run completes without a crash: `./run-benchmark.sh --tool nctl --policy-id <id> --containerized`
-- [ ] Dashboard regenerates cleanly: `python3 reports/generate.py`
-- [ ] No secrets committed: verify with `git status`
+- [ ] `index.yaml` entry is complete — `id`, `track`, `task_type`, `difficulty`, `expected_output_kind`, `description`, and `path` (conversion only) are all present
+- [ ] End-to-end run completes without a crash — `./run-benchmark.sh --tool nctl --policy-id <id> --containerized`
+- [ ] Dashboard regenerates cleanly — `python3 reports/generate.py`
+- [ ] No secrets committed — verify with `git status`
 
 For full details on test architecture, adding a new tool runner, updating the leaderboard, and failure triage, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
